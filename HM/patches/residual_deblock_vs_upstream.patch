@@ -28,7 +28,7 @@ index ea9db136d..0b40faaf7 100644
    std::string   m_SEIFGSFileName;                     ///< output reconstruction file name
  #endif
 diff --git a/source/App/TAppDecoder/TAppDecTop.cpp b/source/App/TAppDecoder/TAppDecTop.cpp
-index c1be041c4..5bb879398 100644
+index c1be041c4..b2b30f52f 100644
 --- a/source/App/TAppDecoder/TAppDecTop.cpp
 +++ b/source/App/TAppDecoder/TAppDecTop.cpp
 @@ -40,6 +40,7 @@
@@ -56,7 +56,7 @@ index c1be041c4..5bb879398 100644
          }
 +        //  residual 저장
 +        // ★★★ 1. Residual 저장 (reconstructed YUV 저장 전) ★★★
-+        if(pcPic->getPicYuvResidual() && !m_reconFileName.empty())
++        if(pcPic->getPicYuvResidual() && !m_residualDir.empty())
 +        {
 +          std::string residualDir = m_residualDir;
  

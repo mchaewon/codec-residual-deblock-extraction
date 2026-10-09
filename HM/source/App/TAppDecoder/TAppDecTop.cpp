@@ -575,7 +575,7 @@ Void TAppDecTop::xWriteOutput( TComList<TComPic*>* pcListPic, UInt tId )
         }
         //  residual 저장
         // ★★★ 1. Residual 저장 (reconstructed YUV 저장 전) ★★★
-        if(pcPic->getPicYuvResidual() && !m_reconFileName.empty())
+        if(pcPic->getPicYuvResidual() && !m_residualDir.empty())
         {
           std::string residualDir = m_residualDir;
 

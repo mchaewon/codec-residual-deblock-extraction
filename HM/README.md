@@ -127,10 +127,11 @@ python HM.py --input-root /path/to/data --dataset LLFF --cfg cfg/encoder_randoma
 
 ## 알려진 한계 / 주의 (코드로 확인, 수정하지 않음)
 
-1. **residual 저장 조건이 `-o` 에 묶여 있음**: `TAppDecTop::xWriteOutput` 의 조건이 `!m_residualDir.empty()` 가 아니라 `!m_reconFileName.empty()` 이다.
-   - `--ResidualDir` 없이 `-o` 만 주면 `"/residual_XXXX.yuv"` (루트 경로)에 쓰려고 시도한다. 보통 열기에 실패해 조용히 넘어가지만, 권한이 있으면 루트에 파일이 생긴다.
-   - 반대로 `--ResidualDir` 만 주고 `-o` 를 안 주면 `xWriteOutput` 에서 나가는 픽처의 residual 은 저장되지 않고, 마지막 `xFlushOutput` 분만 저장된다.
-   - `hm.sh`, `HM.py` 는 항상 `-o` 와 `--ResidualDir` 를 같이 주므로 실제 추출에는 문제가 없었다.
+1. **(수정됨, `Fix:` 커밋) residual 저장 조건이 `-o` 에 묶여 있었음**: 원래 `TAppDecTop::xWriteOutput` 의 조건이 `!m_residualDir.empty()` 가 아니라 `!m_reconFileName.empty()` 였다.
+   - 그래서 `--ResidualDir` 없이 `-o` 만 주면 `"/residual_XXXX.yuv"` (루트 경로)에 쓰려고 시도했고,
+   - `--ResidualDir` 만 주고 `-o` 를 안 주면 `xWriteOutput` 에서 나가는 픽처의 residual 은 빠지고 마지막 `xFlushOutput` 분만 저장됐다.
+   - 지금은 `xWriteOutput` / `xFlushOutput` 모두 `!m_residualDir.empty()` 로 검사한다. `-o` 유무와 관계없이 `--ResidualDir` 를 주면 출력되는 모든 프레임이 저장된다.
+   - `hm.sh`, `HM.py` 처럼 `-o` 와 `--ResidualDir` 를 같이 주는 경우의 출력은 바뀌지 않는다.
 2. **폴더 생성이 한 단계뿐**: `ResidualDir`, `DeblockDir` 는 `mkdir` 를 한 번만 하므로 상위 폴더가 없으면 생성에 실패하고 파일도 써지지 않는다(에러 메시지 없음). `HM.py` 는 미리 `os.makedirs` 한다.
 3. **8-bit 전용**: deblock 덤프는 `Clip3(0,255)` 후 uint8 로 저장한다. 10-bit 입력/내부 비트심도에서는 값이 잘려 깨진다. residual 은 int16 이라 영향 없음.
 4. **크기 불일치**: residual 은 크롭(756행), deblock 은 coded(760행). 분석 시 맞춰야 한다.
