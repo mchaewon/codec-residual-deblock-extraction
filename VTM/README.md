@@ -137,7 +137,7 @@ python VTM.py --input-root /path/to/data --cfg cfg/encoder_randomaccess_vtm.cfg
 1. **8-bit 전용 deblock 덤프**: 0..255 clip 후 uint8. 10-bit 내부 비트심도에서는 값이 깨진다. 이전 분석 코드 일부가 VVC deblock 을 uint16 으로 읽었는데, 현재 디코더 출력과 맞지 않는다(`analysis/` 에서는 고침).
 2. **LMCS**: `encoder_intra_vtm.cfg`, `encoder_randomaccess_vtm.cfg` 모두 `LMCSEnable: 1` 이다. VVC 에서 LMCS 가 켜지면 luma residual 은 forward-mapped domain 에서 예측에 더해진 뒤 inverse mapping 된다. 따라서 저장된 Y residual 은 `복원 − 예측`(원래 domain)과 같지 않다. HM 과 값의 스케일을 직접 비교할 때 주의.
 3. **크기 불일치**: residual 은 크롭(756행), deblock 은 coded(760행).
-4. **폴더 생성이 한 단계뿐**: `mkdir` 한 번이라 상위 폴더가 없으면 실패한다. ResidualDir 쪽은 열기 실패 시 stderr 에 메시지가 나오지만 deblock 쪽은 stdout 에 `[DBF] Failed to open` 만 찍는다.
+4. **(수정됨, `Fix:` 커밋) 폴더 생성이 한 단계뿐이었음**: 지금은 `mkdirRecursive` (`DeblockingFilter.h`) 로 `ResidualDir`, `DeblockDir` 의 상위 폴더까지 만든다. 그 밖의 열기 실패는 ResidualDir 쪽은 stderr `[ResOut] Failed to open`, deblock 쪽은 stdout `[DBF] Failed to open` 으로만 알린다.
 5. residual 버퍼는 `--ResidualDir` 를 안 줘도 모든 픽처에 만들어진다(출력은 없음).
 6. Y 만 파일로 쓴다(버퍼에는 Cb/Cr 도 복사됨). chroma 는 joint CbCr 역변환 후, LMCS chroma residual scaling 전 값이다.
 7. `DecAppCfg.cpp` 에서 추가한 옵션 뒤 `#if JVET_S0257_DUMP_360SEI_MESSAGE` 줄 들여쓰기가 흐트러져 있다(기능 영향 없음).

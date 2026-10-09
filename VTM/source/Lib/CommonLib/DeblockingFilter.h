@@ -41,10 +41,23 @@
 #include "CommonDef.h"
 #include "Unit.h"
 #include "Picture.h"
-#include <sys/stat.h> 
+#include <sys/stat.h>
 
 //! \ingroup CommonLib
 //! \{
+
+/// residual/deblock 출력 폴더 생성: 상위 폴더가 없어도 만든다 (mkdir -p)
+static inline void mkdirRecursive(const std::string& dir)
+{
+  for (size_t i = 1; i < dir.size(); i++)
+  {
+    if (dir[i] == '/' || dir[i] == '\\')
+    {
+      mkdir(dir.substr(0, i).c_str(), 0755);
+    }
+  }
+  mkdir(dir.c_str(), 0755);
+}
 
 // ====================================================================================================================
 // Class definition
@@ -107,7 +120,7 @@ public:
 
     if (!dir.empty())
     {
-      mkdir(dir.c_str(), 0755);
+      mkdirRecursive(dir);
       mkdir((dir + "/before").c_str(), 0755);
       mkdir((dir + "/after").c_str(), 0755);
     }

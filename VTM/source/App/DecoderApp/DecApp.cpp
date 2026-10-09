@@ -941,7 +941,7 @@ void DecApp::xCreateDecLib()
 
   m_cDecLib.setDeblockDir(m_deblockDir);
   if (!m_residualDir.empty())
-        mkdir(m_residualDir.c_str(), 0755);
+        mkdirRecursive(m_residualDir);
 
 #if JVET_AJ0151_DSC_SEI
   m_cDecLib.setKeyStoreParameters(m_keyStoreDir, m_trustStoreDir);

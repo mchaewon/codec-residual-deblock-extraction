@@ -1,5 +1,5 @@
 diff --git a/source/App/DecoderApp/DecApp.cpp b/source/App/DecoderApp/DecApp.cpp
-index b8062f683..3634888b1 100644
+index b8062f683..427d385bd 100644
 --- a/source/App/DecoderApp/DecApp.cpp
 +++ b/source/App/DecoderApp/DecApp.cpp
 @@ -40,6 +40,7 @@
@@ -16,7 +16,7 @@ index b8062f683..3634888b1 100644
  
 +  m_cDecLib.setDeblockDir(m_deblockDir);
 +  if (!m_residualDir.empty())
-+        mkdir(m_residualDir.c_str(), 0755);
++        mkdirRecursive(m_residualDir);
 +
  #if JVET_AJ0151_DSC_SEI
    m_cDecLib.setKeyStoreParameters(m_keyStoreDir, m_trustStoreDir);
@@ -198,18 +198,35 @@ index a7fb4760b..fa8b29f6c 100644
 +  }
 +}
 diff --git a/source/Lib/CommonLib/DeblockingFilter.h b/source/Lib/CommonLib/DeblockingFilter.h
-index eaa6fbc57..c252885ff 100644
+index eaa6fbc57..ed6e0e5fd 100644
 --- a/source/Lib/CommonLib/DeblockingFilter.h
 +++ b/source/Lib/CommonLib/DeblockingFilter.h
-@@ -41,6 +41,7 @@
+@@ -41,10 +41,24 @@
  #include "CommonDef.h"
  #include "Unit.h"
  #include "Picture.h"
-+#include <sys/stat.h> 
++#include <sys/stat.h>
  
  //! \ingroup CommonLib
  //! \{
-@@ -100,6 +101,17 @@ public:
+ 
++/// residual/deblock 출력 폴더 생성: 상위 폴더가 없어도 만든다 (mkdir -p)
++static inline void mkdirRecursive(const std::string& dir)
++{
++  for (size_t i = 1; i < dir.size(); i++)
++  {
++    if (dir[i] == '/' || dir[i] == '\\')
++    {
++      mkdir(dir.substr(0, i).c_str(), 0755);
++    }
++  }
++  mkdir(dir.c_str(), 0755);
++}
++
+ // ====================================================================================================================
+ // Class definition
+ // ====================================================================================================================
+@@ -100,6 +114,17 @@ public:
      HOR,
      NUM
    };
@@ -219,7 +236,7 @@ index eaa6fbc57..c252885ff 100644
 +
 +    if (!dir.empty())
 +    {
-+      mkdir(dir.c_str(), 0755);
++      mkdirRecursive(dir);
 +      mkdir((dir + "/before").c_str(), 0755);
 +      mkdir((dir + "/after").c_str(), 0755);
 +    }
@@ -227,7 +244,7 @@ index eaa6fbc57..c252885ff 100644
  
  private:
    EnumArray<static_vector<EdgeStrengths, MAX_NUM_PARTS_IN_CTU>, EdgeDir> m_edgeStrengths;
-@@ -118,6 +130,7 @@ private:
+@@ -118,6 +143,7 @@ private:
    // shift values to convert location from luma sample units to chroma sample units
    int m_shiftHor;
    int m_shiftVer;
@@ -235,7 +252,7 @@ index eaa6fbc57..c252885ff 100644
  
    enum class FilterLen : uint8_t
    {
-@@ -209,6 +222,8 @@ public:
+@@ -209,6 +235,8 @@ public:
  
    /// picture-level deblocking filter
    void deblockingFilterPic        ( CodingStructure& cs );
