@@ -1,0 +1,302 @@
+diff --git a/source/app/ldecod/configfile.h b/source/app/ldecod/configfile.h
+index 326b104..2222580 100644
+--- a/source/app/ldecod/configfile.h
++++ b/source/app/ldecod/configfile.h
+@@ -52,6 +52,9 @@ Mapping Map[] = {
+ #endif
+     {"DPBPLUS0",                 &cfgparams.dpb_plus[0],                  0,   1.0,                       1,  -16.0,            16.0,                             },
+     {"DPBPLUS1",                 &cfgparams.dpb_plus[1],                  0,   0.0,                       1,  -16.0,            16.0,                             },
++    // ↓↓↓ 아래 두 줄 추가 ↓↓↓
++    {"DeblockDir",               &cfgparams.DeblockDir,                   1,   0.0,                       0,   0.0,             0.0,             FILE_NAME_SIZE,  },
++    {"ResidualDir",              &cfgparams.ResidualDir,                  1,   0.0,                       0,   0.0,             0.0,             FILE_NAME_SIZE,  },
+     {NULL,                       NULL,                                   -1,   0.0,                       0,  0.0,              0.0,                             },
+ };
+ #endif
+diff --git a/source/app/ldecod/global.h b/source/app/ldecod/global.h
+index 58f149f..22b9f80 100644
+--- a/source/app/ldecod/global.h
++++ b/source/app/ldecod/global.h
+@@ -1016,6 +1016,10 @@ typedef struct inp_par
+ 
+   int bDisplayDecParams;
+   int dpb_plus[2];
++  
++  char DeblockDir[FILE_NAME_SIZE];
++  char ResidualDir[FILE_NAME_SIZE];
++
+ } InputParameters;
+ 
+ typedef struct old_slice_par
+diff --git a/source/app/ldecod/image.c b/source/app/ldecod/image.c
+index 404e268..81816b9 100644
+--- a/source/app/ldecod/image.c
++++ b/source/app/ldecod/image.c
+@@ -1864,7 +1864,50 @@ void pad_dec_picture(VideoParameters *p_Vid, StorablePicture *dec_picture)
+   }
+ }
+ 
+-
++/* ===== YUV 프레임 저장 헬퍼 ===== */
++static void save_yuv_frame(const char *path, StorablePicture *p)
++{
++    FILE *fp = fopen(path, "wb");
++    int i, j;
++    if (!fp) return;
++
++    /* Y */
++    for (j = 0; j < p->size_y; j++)
++        for (i = 0; i < p->size_x; i++) {
++            unsigned char v = (unsigned char)iClip3(0, 255, (int)p->imgY[j][i]);
++            fwrite(&v, 1, 1, fp);
++        }
++    /* Cb */
++    if (p->chroma_format_idc != YUV400)
++        for (j = 0; j < p->size_y_cr; j++)
++            for (i = 0; i < p->size_x_cr; i++) {
++                unsigned char v = (unsigned char)iClip3(0, 255, (int)p->imgUV[0][j][i]);
++                fwrite(&v, 1, 1, fp);
++            }
++    /* Cr */
++    if (p->chroma_format_idc != YUV400)
++        for (j = 0; j < p->size_y_cr; j++)
++            for (i = 0; i < p->size_x_cr; i++) {
++                unsigned char v = (unsigned char)iClip3(0, 255, (int)p->imgUV[1][j][i]);
++                fwrite(&v, 1, 1, fp);
++            }
++    fclose(fp);
++}
++/* ===== Residual 프레임 저장 헬퍼 (Y채널만) ===== */
++/* JM은 별도 residual 버퍼가 없으므로 128 bias로 저장                 */
++static void save_residual_frame(const char *path, StorablePicture *p)
++{
++    FILE *fp = fopen(path, "wb");
++    int i, j;
++    if (!fp) return;
++
++    for (j = 0; j < p->size_y; j++)
++        for (i = 0; i < p->size_x; i++) {
++            int16_t v = (int16_t)p->imgY_res[j][i];
++            fwrite(&v, 2, 1, fp);
++        }
++    fclose(fp);
++}
+ /*!
+  ************************************************************************
+  * \brief
+@@ -1950,11 +1993,29 @@ void exit_picture(VideoParameters *p_Vid, StorablePicture **dec_picture)
+ 
+   if(!p_Vid->iDeblockMode && (p_Vid->bDeblockEnable & (1<<(*dec_picture)->used_for_reference)))
+   {
++    calculate_frame_no(p_Vid, *dec_picture);
++    // printf("[DEBUG] dec_picture size: %d x %d\n", (*dec_picture)->size_x, (*dec_picture)->size_y);
++    // ── Residual 저장 ─────────────────────────────────────────────
++    if (strlen(p_Inp->ResidualDir) > 0) {
++      char res_path[512];
++      snprintf(res_path, sizeof(res_path), "%s/residual_%04d.yuv",
++              p_Inp->ResidualDir, p_Vid->frame_no +1);
++      save_residual_frame(res_path, *dec_picture);
++    }
+     //deblocking for frame or field
+     if( (p_Vid->separate_colour_plane_flag != 0) )
+     {
+       int nplane;
+       int colour_plane_id = p_Vid->ppSliceList[0]->colour_plane_id;
++
++      // ── Deblock 전 저장 ───────────────────────────────────────
++      if (strlen(p_Inp->DeblockDir) > 0) {
++        char db_path[512];
++        snprintf(db_path, sizeof(db_path), "%s/before/deblock_%04d.yuv",
++                 p_Inp->DeblockDir, p_Vid->frame_no + 1);
++        save_yuv_frame(db_path, *dec_picture);
++      }
++
+       for( nplane=0; nplane<MAX_PLANE; ++nplane )
+       {
+         p_Vid->ppSliceList[0]->colour_plane_id = nplane;
+@@ -1963,10 +2024,34 @@ void exit_picture(VideoParameters *p_Vid, StorablePicture **dec_picture)
+       }
+       p_Vid->ppSliceList[0]->colour_plane_id = colour_plane_id;
+       make_frame_picture_JV(p_Vid);
++
++      // ── Deblock 후 저장 ───────────────────────────────────────
++      if (strlen(p_Inp->DeblockDir) > 0) {
++        char db_path[512];
++        snprintf(db_path, sizeof(db_path), "%s/after/deblock_%04d.yuv",
++                 p_Inp->DeblockDir, p_Vid->frame_no + 1 );
++        save_yuv_frame(db_path, *dec_picture);
++      }
+     }
+     else
+     {
+-      DeblockPicture( p_Vid, *dec_picture );
++      // ── Deblock 전 저장 ───────────────────────────────────────
++      if (strlen(p_Inp->DeblockDir) > 0) {
++        char db_path[512];
++        snprintf(db_path, sizeof(db_path), "%s/before/deblock_%04d.yuv",
++                 p_Inp->DeblockDir, p_Vid->frame_no + 1);
++        save_yuv_frame(db_path, *dec_picture);
++      }
++
++      DeblockPicture( p_Vid, *dec_picture );   // ← 기존 코드 유지
++
++      // ── Deblock 후 저장 ───────────────────────────────────────
++      if (strlen(p_Inp->DeblockDir) > 0) {
++        char db_path[512];
++        snprintf(db_path, sizeof(db_path), "%s/after/deblock_%04d.yuv",
++                 p_Inp->DeblockDir, p_Vid->frame_no + 1);
++        save_yuv_frame(db_path, *dec_picture);
++      }
+     }
+   }
+   else
+diff --git a/source/app/ldecod/ldecod.c b/source/app/ldecod/ldecod.c
+index eaf12b5..4ec8979 100644
+--- a/source/app/ldecod/ldecod.c
++++ b/source/app/ldecod/ldecod.c
+@@ -28,7 +28,7 @@
+  *     H.264/AVC reference decoder project main()
+  *  \author
+  *     Main contributors (see contributors.h for copyright, address and affiliation details)
+- *     - Inge Lille-Lang�y       <inge.lille-langoy@telenor.com>
++ *     - Inge Lille-Lang�y       <inge.lille-langoy@telenor.com>
+  *     - Rickard Sjoberg         <rickard.sjoberg@era.ericsson.se>
+  *     - Stephan Wenger          <stewe@cs.tu-berlin.de>
+  *     - Jani Lainema            <jani.lainema@nokia.com>
+@@ -44,7 +44,7 @@
+ 
+ #include "contributors.h"
+ 
+-//#include <sys/stat.h>
++#include <sys/stat.h>
+ 
+ #include "global.h"
+ #include "annexb.h"
+@@ -1221,6 +1221,31 @@ int OpenDecoder(InputParameters *p_Inp)
+   init_old_slice(pDecoder->p_Vid->old_slice);
+ 
+   init(pDecoder->p_Vid);
++  // ── DeblockDir / ResidualDir 디렉토리 생성 ─────────────────────
++  if (strlen(p_Inp->DeblockDir) > 0) {
++    char path[512];
++#ifdef WIN32
++    _mkdir(p_Inp->DeblockDir);
++    snprintf(path, sizeof(path), "%s/before", p_Inp->DeblockDir);
++    _mkdir(path);
++    snprintf(path, sizeof(path), "%s/after",  p_Inp->DeblockDir);
++    _mkdir(path);
++#else
++    mkdir(p_Inp->DeblockDir, 0755);
++    snprintf(path, sizeof(path), "%s/before", p_Inp->DeblockDir);
++    mkdir(path, 0755);
++    snprintf(path, sizeof(path), "%s/after",  p_Inp->DeblockDir);
++    mkdir(path, 0755);
++#endif
++  }
++  if (strlen(p_Inp->ResidualDir) > 0) {
++#ifdef WIN32
++    _mkdir(p_Inp->ResidualDir);
++#else
++    mkdir(p_Inp->ResidualDir, 0755);
++#endif
++  }
++  // ────────────────────────────────────────────────────────────────
+  
+   init_out_buffer(pDecoder->p_Vid);
+ 
+diff --git a/source/app/ldecod/macroblock.c b/source/app/ldecod/macroblock.c
+index 4fbdc67..1e6cd0a 100644
+--- a/source/app/ldecod/macroblock.c
++++ b/source/app/ldecod/macroblock.c
+@@ -7,7 +7,7 @@
+  *
+  * \author
+  *    Main contributors (see contributors.h for copyright, address and affiliation details)
+- *    - Inge Lille-Lang�y               <inge.lille-langoy@telenor.com>
++ *    - Inge Lille-Lang�y               <inge.lille-langoy@telenor.com>
+  *    - Rickard Sjoberg                 <rickard.sjoberg@era.ericsson.se>
+  *    - Jani Lainema                    <jani.lainema@nokia.com>
+  *    - Sebastian Purreiter             <sebastian.purreiter@mch.siemens.de>
+@@ -1429,6 +1429,32 @@ int decode_one_macroblock(Macroblock *currMB, StorablePicture *dec_picture)
+   {
+     currSlice->decode_one_component(currMB, PLANE_Y, dec_picture->imgY, dec_picture);
+   }
++  if (currMB->mbAddrX == 0)  // 첫 번째 MB만 출력
++  {
++      int j, i;
++      int min_val = 99999, max_val = -99999;
++      for (j = 0; j < MB_BLOCK_SIZE; j++)
++          for (i = 0; i < MB_BLOCK_SIZE; i++)
++          {
++              if (currSlice->mb_rres[PLANE_Y][j][i] > max_val)
++                  max_val = currSlice->mb_rres[PLANE_Y][j][i];
++              if (currSlice->mb_rres[PLANE_Y][j][i] < min_val)
++                  min_val = currSlice->mb_rres[PLANE_Y][j][i];
++          }
++      printf("[DEBUG] MB0 mb_rres min=%d, max=%d\n", min_val, max_val);
++  }
++  // ★ Residual 누적 저장 (Y채널, decode_one_component 완료 직후) ★
++  if (dec_picture->imgY_res && strlen(p_Vid->p_Inp->ResidualDir) > 0)
++  {
++    int j, i;
++    for (j = 0; j < MB_BLOCK_SIZE; j++)
++      for (i = 0; i < MB_BLOCK_SIZE; i++)
++        dec_picture->imgY_res[currMB->pix_y + j][currMB->pix_x + i] =
++                (int)(dec_picture->imgY[currMB->pix_y + j][currMB->pix_x + i])
++              - (int)(currSlice->mb_pred[PLANE_Y][j][i]);
++  }
++  // ★ 끝 ★
++
+ 
+   return 0;
+ }
+diff --git a/source/app/ldecod/mbuffer.c b/source/app/ldecod/mbuffer.c
+index e3579d4..1ed59b5 100644
+--- a/source/app/ldecod/mbuffer.c
++++ b/source/app/ldecod/mbuffer.c
+@@ -20,7 +20,7 @@
+  */
+ 
+ #include <limits.h>
+-
++#include <stdint.h>
+ #include "global.h"
+ #include "erc_api.h"
+ #include "header.h"
+@@ -553,6 +553,11 @@ StorablePicture* alloc_storable_picture(VideoParameters *p_Vid, PictureStructure
+   s->iLumaStride = size_x+2*p_Vid->iLumaPadX;
+   s->iLumaExpandedHeight = size_y+2*p_Vid->iLumaPadY;
+ 
++  // ★ Residual 버퍼 할당 및 초기화 추가 ★
++  // get_mem2Dpel(&(s->imgY_res), size_y, size_x);
++  get_mem2Dint(&(s->imgY_res), size_y, size_x);
++  memset(s->imgY_res[0], 0, size_y * size_x * sizeof(uint16));
++
+   if (active_sps->chroma_format_idc != YUV400)
+   {
+     get_mem3Dpel_pad(&(s->imgUV), 2, size_y_cr, size_x_cr, p_Vid->iChromaPadY, p_Vid->iChromaPadX);
+@@ -717,6 +722,12 @@ void free_storable_picture(StorablePicture* p)
+       free_mem2Dpel_pad(p->imgY, p->iLumaPadY, p->iLumaPadX);
+       p->imgY = NULL;
+     }
++    // ★ Residual 버퍼 해제 추가 ★
++    if (p->imgY_res)
++    {
++        free_mem2Dint(p->imgY_res);
++        p->imgY_res = NULL;
++    }
+ 
+     if (p->imgUV)
+     {
+diff --git a/source/app/ldecod/mbuffer.h b/source/app/ldecod/mbuffer.h
+index dd379de..527bd06 100644
+--- a/source/app/ldecod/mbuffer.h
++++ b/source/app/ldecod/mbuffer.h
+@@ -131,6 +131,8 @@ typedef struct storable_picture
+   char listXsize[MAX_NUM_SLICES][2];
+   struct storable_picture **listX[MAX_NUM_SLICES][2];
+   int         layer_id;
++
++  int **imgY_res;     // residual buffer (Y channel),
+ } StorablePicture;
+ 
+ typedef StorablePicture *StorablePicturePtr;
