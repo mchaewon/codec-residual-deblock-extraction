@@ -1,0 +1,504 @@
+diff --git a/source/App/TAppDecoder/TAppDecCfg.cpp b/source/App/TAppDecoder/TAppDecCfg.cpp
+index 5f29aa23b..829f92885 100644
+--- a/source/App/TAppDecoder/TAppDecCfg.cpp
++++ b/source/App/TAppDecoder/TAppDecCfg.cpp
+@@ -86,7 +86,9 @@ Bool TAppDecCfg::parseCfg( Int argc, TChar* argv[] )
+   ("TarDecLayerIdSetFile,l",    cfg_TargetDecLayerIdSetFile,           string(""), "targetDecLayerIdSet file name. The file should include white space separated LayerId values to be decoded. Omitting the option or a value of -1 in the file decodes all layers.")
+   ("RespectDefDispWindow,w",    m_respectDefDispWindow,                0,          "Only output content inside the default display window\n")
+   ("SEIColourRemappingInfoFilename",  m_colourRemapSEIFileName,        string(""), "Colour Remapping YUV output file name. If empty, no remapping is applied (ignore SEI message)\n")
+-#if JVET_X0048_X0103_FILM_GRAIN
++  ("ResidualDir",               m_residualDir,                         std::string(""), "Output directory for residual frames")
++  ("DeblockDir",                m_deblockDir,                          std::string(""), "Directory to save deblocking YUV files")
++  #if JVET_X0048_X0103_FILM_GRAIN
+   ("SEIFGSFilename",            m_SEIFGSFileName,                      string(""), "FGS YUV output file name. If empty, no film grain is applied (ignore SEI message)\n")
+ #endif
+ #if SHUTTER_INTERVAL_SEI_PROCESSING
+diff --git a/source/App/TAppDecoder/TAppDecCfg.h b/source/App/TAppDecoder/TAppDecCfg.h
+index ea9db136d..0b40faaf7 100644
+--- a/source/App/TAppDecoder/TAppDecCfg.h
++++ b/source/App/TAppDecoder/TAppDecCfg.h
+@@ -66,6 +66,9 @@ protected:
+   Int           m_decodedPictureHashSEIEnabled;       ///< Checksum(3)/CRC(2)/MD5(1)/disable(0) acting on decoded picture hash SEI message
+   Bool          m_decodedNoDisplaySEIEnabled;         ///< Enable(true)/disable(false) writing only pictures that get displayed based on the no display SEI message
+   std::string   m_colourRemapSEIFileName;             ///< output Colour Remapping file name
++  
++  std::string m_residualDir;
++  std::string m_deblockDir;
+ #if JVET_X0048_X0103_FILM_GRAIN
+   std::string   m_SEIFGSFileName;                     ///< output reconstruction file name
+ #endif
+diff --git a/source/App/TAppDecoder/TAppDecTop.cpp b/source/App/TAppDecoder/TAppDecTop.cpp
+index c1be041c4..5bb879398 100644
+--- a/source/App/TAppDecoder/TAppDecTop.cpp
++++ b/source/App/TAppDecoder/TAppDecTop.cpp
+@@ -40,6 +40,7 @@
+ #include <stdio.h>
+ #include <fcntl.h>
+ #include <assert.h>
++#include <sys/stat.h> 
+ 
+ #include "TAppDecTop.h"
+ #include "TLibDecoder/AnnexBread.h"
+@@ -406,6 +407,10 @@ Void TAppDecTop::xInitDecLib()
+   // initialize decoder class
+   m_cTDecTop.init();
+   m_cTDecTop.setDecodedPictureHashSEIEnabled(m_decodedPictureHashSEIEnabled);
++
++  m_cTDecTop.setDeblockDir(m_deblockDir);
++  if (!m_residualDir.empty())
++        mkdir(m_residualDir.c_str(), 0755);
+ #if MCTS_ENC_CHECK
+   m_cTDecTop.setTMctsCheckEnabled(m_tmctsCheck);
+ #endif
+@@ -568,7 +573,43 @@ Void TAppDecTop::xWriteOutput( TComList<TComPic*>* pcListPic, UInt tId )
+         {
+           dpbFullness--;
+         }
++        //  residual 저장
++        // ★★★ 1. Residual 저장 (reconstructed YUV 저장 전) ★★★
++        if(pcPic->getPicYuvResidual() && !m_reconFileName.empty())
++        {
++          std::string residualDir = m_residualDir;
+ 
++          char residualFileName[512];
++          sprintf(residualFileName, "%s/residual_%04d.yuv", residualDir.c_str(), pcPic->getPOC()+1);
++          
++          FILE* fpResidual = fopen(residualFileName, "wb");
++          if(fpResidual)
++          {
++            TComPicYuv* pcResYuv = pcPic->getPicYuvResidual();
++            const Window &conf = pcPic->getConformanceWindow();
++            
++            // Y component
++            Pel* pY = pcResYuv->getAddr(COMPONENT_Y);
++            Int width = pcResYuv->getWidth(COMPONENT_Y) 
++                        - conf.getWindowLeftOffset() - conf.getWindowRightOffset();
++            Int height = pcResYuv->getHeight(COMPONENT_Y) 
++                        - conf.getWindowTopOffset() - conf.getWindowBottomOffset();
++            Int stride = pcResYuv->getStride(COMPONENT_Y);
++            
++            Pel* pYStart = pY + conf.getWindowTopOffset() * stride 
++                              + conf.getWindowLeftOffset();
++            
++            for(Int y = 0; y < height; y++)
++            {
++              fwrite(pYStart + y * stride, sizeof(Pel), width, fpResidual);
++            }
++            
++            fclose(fpResidual);
++          }
++          
++          // ★★★ 2. Residual 버퍼 해제 ★★★
++          pcPic->destroyResidualBuffer();
++        }
+         if ( !m_reconFileName.empty() )
+         {
+           const Window &conf    = pcPic->getConformanceWindow();
+@@ -731,6 +772,36 @@ Void TAppDecTop::xFlushOutput( TComList<TComPic*>* pcListPic )
+ 
+       if ( pcPic->getOutputMark() )
+       {
++        // ★★★ Residual 저장 추가 ★★★
++        if(pcPic->getPicYuvResidual() && !m_residualDir.empty())
++        {
++            char residualFileName[512];
++            sprintf(residualFileName, "%s/residual_%04d.yuv",
++                    m_residualDir.c_str(), pcPic->getPOC()+1);
++
++            FILE* fpResidual = fopen(residualFileName, "wb");
++            if(fpResidual)
++            {
++                TComPicYuv* pcResYuv = pcPic->getPicYuvResidual();
++                const Window &conf = pcPic->getConformanceWindow();
++
++                Pel* pY = pcResYuv->getAddr(COMPONENT_Y);
++                Int width  = pcResYuv->getWidth(COMPONENT_Y)
++                              - conf.getWindowLeftOffset() - conf.getWindowRightOffset();
++                Int height = pcResYuv->getHeight(COMPONENT_Y)
++                              - conf.getWindowTopOffset() - conf.getWindowBottomOffset();
++                Int stride = pcResYuv->getStride(COMPONENT_Y);
++                Pel* pYStart = pY + conf.getWindowTopOffset() * stride
++                                  + conf.getWindowLeftOffset();
++
++                for(Int y = 0; y < height; y++)
++                    fwrite(pYStart + y * stride, sizeof(Pel), width, fpResidual);
++
++                fclose(fpResidual);
++            }
++            pcPic->destroyResidualBuffer();
++        }
++        // ★★★ Residual 저장 끝 ★★★
+         // write to file
+         if ( !m_reconFileName.empty() )
+         {
+diff --git a/source/Lib/TLibCommon/TComLoopFilter.cpp b/source/Lib/TLibCommon/TComLoopFilter.cpp
+index fc8aecdbe..443b943c6 100644
+--- a/source/Lib/TLibCommon/TComLoopFilter.cpp
++++ b/source/Lib/TLibCommon/TComLoopFilter.cpp
+@@ -39,6 +39,9 @@
+ #include "TComSlice.h"
+ #include "TComMv.h"
+ #include "TComTU.h"
++#include <fstream>   // ← 이거 추가
++#include <string>    // ← 이거 추가 (to_string 사용 위해)
++#include <sys/stat.h> 
+ 
+ //! \ingroup TLibCommon
+ //! \{
+@@ -129,6 +132,49 @@ Void TComLoopFilter::destroy()
+  */
+ Void TComLoopFilter::loopFilterPic( TComPic* pcPic )
+ {
++  const Int poc = pcPic->getSlice(0)->getPOC();
++  TComPicYuv* pcRecYuv = pcPic->getPicYuvRec();
++  // std::string prefix = m_deblockDir.empty() ? "" : (m_deblockDir + "/");
++  char pocStr[16];
++  snprintf(pocStr, sizeof(pocStr), "%04d", poc+1);
++
++  if (!m_deblockDir.empty())
++  {
++      // mkdir((m_deblockDir + "/before").c_str(), 0755);
++
++      // =============================================
++      // ★ Deblocking 전 YUV 저장
++      // =============================================
++      {
++        std::string prefix = m_deblockDir.empty() ? "" : (m_deblockDir + "/before/");  
++        std::string filename = prefix + "deblock_" + pocStr + ".yuv";
++        std::ofstream ofs(filename, std::ios::binary);
++
++        const ComponentID comps[3] = {COMPONENT_Y, COMPONENT_Cb, COMPONENT_Cr};
++        for (Int c = 0; c < pcPic->getNumberValidComponents(); c++)
++        {
++          ComponentID comp = comps[c];
++          const Pel*  pSrc   = pcRecYuv->getAddr(comp);
++          const Int   width  = pcRecYuv->getWidth(comp);
++          const Int   height = pcRecYuv->getHeight(comp);
++          const Int   stride = pcRecYuv->getStride(comp);
++          // printf("[DEBUG] Y width=%d height=%d stride=%d\n",
++          //         pcRecYuv->getWidth(COMPONENT_Y),
++          //         pcRecYuv->getHeight(COMPONENT_Y),
++          //         pcRecYuv->getStride(COMPONENT_Y));
++          for (Int y = 0; y < height; y++, pSrc += stride)
++          {
++            // ofs.write(reinterpret_cast<const char*>(pSrc), sizeof(Pel) * width);
++            for (Int x = 0; x < width; x++)
++            {
++                UChar val = (UChar)Clip3(0, 255, (Int)pSrc[x]);
++                ofs.write(reinterpret_cast<const char*>(&val), sizeof(UChar));
++            }
++          }
++        }
++      }
++  }
++
+   // Horizontal filtering
+   for ( UInt ctuRsAddr = 0; ctuRsAddr < pcPic->getNumberOfCtusInFrame(); ctuRsAddr++ )
+   {
+@@ -152,6 +198,47 @@ Void TComLoopFilter::loopFilterPic( TComPic* pcPic )
+     // CU-based deblocking
+     xDeblockCU( pCtu, 0, 0, EDGE_HOR );
+   }
++
++  if (!m_deblockDir.empty())
++  {
++      // mkdir((m_deblockDir + "/after").c_str(), 0755);
++
++    // =============================================
++    // ★ Deblocking 후 YUV 저장
++    // =============================================
++    {
++      // char pocStr[16];
++      // snprintf(pocStr, sizeof(pocStr), "%04d", poc);
++      std::string prefix = m_deblockDir.empty() ? "" : (m_deblockDir + "/after/");  
++
++      std::string filename = prefix + "deblock_" + pocStr + ".yuv";
++      std::ofstream ofs(filename, std::ios::binary);
++
++      const ComponentID comps[3] = {COMPONENT_Y, COMPONENT_Cb, COMPONENT_Cr};
++      for (Int c = 0; c < pcPic->getNumberValidComponents(); c++)
++      {
++        ComponentID comp = comps[c];
++        const Pel*  pSrc   = pcRecYuv->getAddr(comp);
++        const Int   width  = pcRecYuv->getWidth(comp);
++        const Int   height = pcRecYuv->getHeight(comp);
++        const Int   stride = pcRecYuv->getStride(comp);
++        // printf("[DEBUG] Y width=%d height=%d stride=%d\n",
++        //           pcRecYuv->getWidth(COMPONENT_Y),
++        //           pcRecYuv->getHeight(COMPONENT_Y),
++        //           pcRecYuv->getStride(COMPONENT_Y));
++        for (Int y = 0; y < height; y++, pSrc += stride)
++        {
++          // ofs.write(reinterpret_cast<const char*>(pSrc), sizeof(Pel) * width);
++          for (Int x = 0; x < width; x++)
++          {
++              UChar val = (UChar)Clip3(0, 255, (Int)pSrc[x]);
++              ofs.write(reinterpret_cast<const char*>(&val), sizeof(UChar));
++          }
++        }
++      }
++    }
++  }
++  
+ }
+ 
+ 
+diff --git a/source/Lib/TLibCommon/TComLoopFilter.h b/source/Lib/TLibCommon/TComLoopFilter.h
+index 6ef2a1dbb..db893ac1b 100644
+--- a/source/Lib/TLibCommon/TComLoopFilter.h
++++ b/source/Lib/TLibCommon/TComLoopFilter.h
+@@ -37,7 +37,7 @@
+ 
+ #ifndef __TCOMLOOPFILTER__
+ #define __TCOMLOOPFILTER__
+-
++#include <sys/stat.h> 
+ #include "CommonDef.h"
+ #include "TComPic.h"
+ 
+@@ -61,6 +61,7 @@ private:
+   LFCUParam m_stLFCUParam;                   ///< status structure
+ 
+   Bool      m_bLFCrossTileBoundary;
++  std::string m_deblockDir;
+ 
+ protected:
+   /// CU-level deblocking function
+@@ -130,6 +131,15 @@ public:
+ 
+   /// picture-level deblocking filter
+   Void loopFilterPic( TComPic* pcPic );
++  Void setDeblockDir(const std::string& dir) 
++  { m_deblockDir = dir; 
++    if (!dir.empty())
++    {
++      mkdir(dir.c_str(), 0755);
++      mkdir((dir + "/before").c_str(), 0755);
++      mkdir((dir + "/after").c_str(), 0755);
++    }
++  }
+ 
+   static Int getBeta( Int qp )
+   {
+diff --git a/source/Lib/TLibCommon/TComPic.cpp b/source/Lib/TLibCommon/TComPic.cpp
+index 9a190ebeb..cb2d1fb3c 100644
+--- a/source/Lib/TLibCommon/TComPic.cpp
++++ b/source/Lib/TLibCommon/TComPic.cpp
+@@ -55,6 +55,7 @@ TComPic::TComPic()
+ , m_bNeededForOutput                      (false)
+ , m_uiCurrSliceIdx                        (0)
+ , m_bCheckLTMSB                           (false)
++, m_pcPicYuvResidual                      (NULL)  // ★ 추가
+ {
+   for(UInt i=0; i<NUM_PIC_YUV; i++)
+   {
+@@ -282,7 +283,14 @@ Void TComPic::destroy()
+       m_apcPicYuv[i]  = NULL;
+     }
+   }
+-
++   // ★ Residual buffer 해제 추가 ★
++  if(m_pcPicYuvResidual)
++  {
++    m_pcPicYuvResidual->destroy();
++    delete m_pcPicYuvResidual;
++    m_pcPicYuvResidual = NULL;
++  }
++  
+   deleteSEIs(m_SEIs);
+ #if JVET_X0048_X0103_FILM_GRAIN
+   m_grainBuf = NULL;
+@@ -510,4 +518,50 @@ Void TComPic::xOutputPreFilteredPic(TComPic* pcPic, TComList<TComPic*>* pcListPi
+   }
+ }
+ #endif
++
++Void TComPic::createResidualBuffer()
++{
++  if(!m_pcPicYuvResidual)
++  {
++    m_pcPicYuvResidual = new TComPicYuv;
++    
++    const TComSPS &sps = *(getSlice(0)->getSPS());
++    const ChromaFormat chromaFormatIDC = sps.getChromaFormatIdc();
++    const Int iWidth = sps.getPicWidthInLumaSamples();
++    const Int iHeight = sps.getPicHeightInLumaSamples();
++    
++    m_pcPicYuvResidual->create(iWidth, 
++                                iHeight, 
++                                chromaFormatIDC,
++                                sps.getMaxCUWidth(), 
++                                sps.getMaxCUHeight(), 
++                                sps.getMaxTotalCUDepth(), 
++                                true);
++  }
++}
++Void TComPic::clearResidualBuffer()
++{
++  if(m_pcPicYuvResidual)
++  {
++
++    for(Int comp = 0; comp < getNumberValidComponents(); comp++)
++    {
++      ComponentID compID = ComponentID(comp);
++      Pel* pBuf = m_pcPicYuvResidual->getAddr(compID);
++      UInt size = m_pcPicYuvResidual->getStride(compID) 
++                * m_pcPicYuvResidual->getHeight(compID);
++      memset(pBuf, 0, sizeof(Pel) * size);
++    }
++  }
++}
++  
++Void TComPic::destroyResidualBuffer()
++{
++  if(m_pcPicYuvResidual)
++  {
++    m_pcPicYuvResidual->destroy();
++    delete m_pcPicYuvResidual;
++    m_pcPicYuvResidual = NULL;
++  }
++}
+ //! \}
+diff --git a/source/Lib/TLibCommon/TComPic.h b/source/Lib/TLibCommon/TComPic.h
+index 3a63ab182..4556523c0 100644
+--- a/source/Lib/TLibCommon/TComPic.h
++++ b/source/Lib/TLibCommon/TComPic.h
+@@ -93,6 +93,7 @@ private:
+ 
+   Bool                  m_isTop;
+   Bool                  m_isField;
++  TComPicYuv*           m_pcPicYuvResidual;
+ 
+   std::vector<std::vector<TComDataCU*> > m_vSliceCUDataLink;
+ 
+@@ -227,6 +228,13 @@ public:
+    * return the current list of SEI messages associated with this picture.
+    * Pointer is valid until this->destroy() is called */
+   const SEIMessages& getSEIs() const { return m_SEIs; }
++
++  // residual buffer access functions
++  TComPicYuv* getPicYuvResidual() { return m_pcPicYuvResidual; }
++  Void         createResidualBuffer();
++  Void         clearResidualBuffer();
++  Void         destroyResidualBuffer();
++  
+ };// END CLASS DEFINITION TComPic
+ 
+ //! \}
+diff --git a/source/Lib/TLibCommon/TComTrQuant.cpp b/source/Lib/TLibCommon/TComTrQuant.cpp
+index e38786feb..06ece4453 100644
+--- a/source/Lib/TLibCommon/TComTrQuant.cpp
++++ b/source/Lib/TLibCommon/TComTrQuant.cpp
+@@ -1709,7 +1709,31 @@ Void TComTrQuant::invRecurTransformNxN( const ComponentID compID,
+       }
+ #endif
+     }
+-
++    // ★★★ 여기에 Residual 저장 추가 ★★★
++    // Inverse transform 완료, Cross-component prediction 전
++    TComPic* pcPic = pcCU->getPic();
++    TComPicYuv* pcResidualYuv = pcPic->getPicYuvResidual();
++    
++    if(pcResidualYuv)
++    {
++      // TU의 프레임 내 절대 위치로 저장
++      Pel* pDstResidual = pcResidualYuv->getAddr(compID, 
++                                                  pcCU->getCtuRsAddr(), 
++                                                  pcCU->getZorderIdxInCtu() + absPartIdxTU);
++      const UInt dstStride = pcResidualYuv->getStride(compID);
++      
++      const UInt tuWidth  = tuRect.width;
++      const UInt tuHeight = tuRect.height;
++      
++      // Residual 복사
++      for(UInt y = 0; y < tuHeight; y++)
++      {
++        memcpy(pDstResidual + y * dstStride, 
++               pResi + y * uiStride, 
++               sizeof(Pel) * tuWidth);
++      }
++    }
++    // ★★★ Residual 저장 끝 ★★★
+     if (isChroma(compID) && (pcCU->getCrossComponentPredictionAlpha(absPartIdxTU, compID) != 0))
+     {
+       const Pel *piResiLuma = pResidual->getAddr( COMPONENT_Y );
+diff --git a/source/Lib/TLibDecoder/TDecCu.cpp b/source/Lib/TLibDecoder/TDecCu.cpp
+index 1b39ec974..39b205932 100644
+--- a/source/Lib/TLibDecoder/TDecCu.cpp
++++ b/source/Lib/TLibDecoder/TDecCu.cpp
+@@ -34,7 +34,9 @@
+ /** \file     TDecCu.cpp
+     \brief    CU decoder class
+ */
+-
++#include <fstream>  
++#include <string>
++#include <cstddef>
+ #include "TDecCu.h"
+ #include "TLibCommon/TComTU.h"
+ #include "TLibCommon/TComPrediction.h"
+@@ -581,7 +583,28 @@ TDecCu::xIntraRecBlk(       TComYuv*    pcRecoYuv,
+     ss << (*psDebug);
+   }
+ #endif
+-
++  // ★★★ Residual을 프레임 버퍼에 저장 ★★★
++  TComPic* pcPic = pcCU->getPic();
++  TComPicYuv* pcResidualYuv = pcPic->getPicYuvResidual();
++
++  if(pcResidualYuv)
++  {
++    // 3-parameter getAddr 사용: (ComponentID, ctuRsAddr, absZorderIdx)
++    // 이 함수가 자동으로 CTU offset + sub-CU offset을 계산해줌
++    Pel* pDstResidual = pcResidualYuv->getAddr(compID, 
++                                                pcCU->getCtuRsAddr(), 
++                                                pcCU->getZorderIdxInCtu() + uiAbsPartIdx);
++    const UInt dstStride = pcResidualYuv->getStride(compID);
++    
++    // TU residual을 프레임 버퍼에 복사
++    for(UInt y = 0; y < uiHeight; y++)
++    {
++      memcpy(pDstResidual + y * dstStride, 
++            piResi + y * uiStride, 
++            sizeof(Pel) * uiWidth);
++    }
++  }
++  //  pReco[x] - pPred[x] == piResi[x] 되어야 함.
+   //===== reconstruction =====
+   const UInt uiRecIPredStride  = pcCU->getPic()->getPicYuvRec()->getStride(compID);
+ 
+diff --git a/source/Lib/TLibDecoder/TDecSlice.cpp b/source/Lib/TLibDecoder/TDecSlice.cpp
+index 66833617f..044afd4af 100644
+--- a/source/Lib/TLibDecoder/TDecSlice.cpp
++++ b/source/Lib/TLibDecoder/TDecSlice.cpp
+@@ -88,6 +88,18 @@ Void TDecSlice::decompressSlice(TComInputBitstream** ppcSubstreams, TComPic* pcP
+   pcPic->setPicYuvPred( 0 );
+   pcPic->setPicYuvResi( 0 );
+ 
++  // 프레임의 첫 번째 슬라이스인 경우에만 초기화
++  if(startCtuTsAddr == 0 && !pcSlice->getDependentSliceSegmentFlag()) // 첫 번째 CTU = 첫 번째 슬라이스
++  {
++    // Residual 버퍼 생성 (없으면)
++    if(!pcPic->getPicYuvResidual())
++    {
++      pcPic->createResidualBuffer();
++    }
++    // 0으로 초기화 (이전 프레임 데이터 제거)
++    pcPic->clearResidualBuffer();
++  }
++
+ #if ENC_DEC_TRACE
+   g_bJustDoIt = g_bEncDecTraceEnable;
+ #endif
+diff --git a/source/Lib/TLibDecoder/TDecTop.h b/source/Lib/TLibDecoder/TDecTop.h
+index 8bb201e58..a1a257da5 100644
+--- a/source/Lib/TLibDecoder/TDecTop.h
++++ b/source/Lib/TLibDecoder/TDecTop.h
+@@ -153,6 +153,7 @@ public:
+   Void  destroy ();
+ 
+   Void setDecodedPictureHashSEIEnabled(Int enabled) { m_cGopDecoder.setDecodedPictureHashSEIEnabled(enabled); }
++  Void setDeblockDir(const std::string& dir) { m_cLoopFilter.setDeblockDir(dir); }
+ #if MCTS_ENC_CHECK
+   Void setTMctsCheckEnabled(Bool enabled) { m_tmctsCheckEnabled = enabled; }
+ 
