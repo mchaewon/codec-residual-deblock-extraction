@@ -1,0 +1,6 @@
+# analysis/ scripts (tested with Python 3.12)
+numpy>=1.26
+matplotlib>=3.9
+opencv-python>=4.11
+scipy>=1.13
+PyWavelets>=1.7
