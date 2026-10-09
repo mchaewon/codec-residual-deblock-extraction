@@ -163,3 +163,5 @@ desktop.ini
 !/analysis/figures/**
 !/analysis/samples/
 !/analysis/samples/**
+# upstream JM test inputs (QCIF, ~0.5 MB total) used by JM/cfg/encoder.cfg
+!/JM/cfg/foreman_part_qcif*.yuv

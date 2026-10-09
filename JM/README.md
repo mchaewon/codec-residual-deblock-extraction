@@ -17,14 +17,16 @@ upstream 원래 README 는 [README_upstream.md](README_upstream.md) 로 이름�
 | 기준 커밋 | `933098befc4b18f176e99db8f98c019c27ce9748` (2025-01-19) |
 | 라이선스 | ITU-T / ISO/IEC 저작권 고지 [COPYRIGHT_ITU.txt](COPYRIGHT_ITU.txt), [COPYRIGHT_ISO_IEC.txt](COPYRIGHT_ISO_IEC.txt), [disclaimer.txt](disclaimer.txt) 를 유지한다 |
 
+이 폴더의 upstream 파일과 그 안에 추가·수정한 코드(`source/`, `patches/`)는 위 upstream 라이선스를 따른다. 이 레포에서 새로 작성한 `tools/`, 실행 스크립트(`jm.sh`), 이 `README.md` 는 MIT 라이선스다 ([../LICENSE](../LICENSE)).
+
 JM 폴더에도 upstream `.git` 이 있었으므로 수정 지점은 키워드 추정이 아니라 `git -c core.fileMode=false diff` 로 정확히 확인했다.
 
 정리하면서 upstream 으로 되돌린 것 (원래 상태는 레포 바깥 백업에 저장):
 - `disclaimer.txt`: 로컬에서 삭제돼 있던 것을 upstream 에서 복원.
 - `cfg/encoder.cfg`: 로컬에서 `IntraPeriod 0→1`, `QPISlice 28→32` 로 바뀌어 있었는데, 두 값 모두 `jm.sh` 가 `-p` 로 덮어쓰므로 upstream 값으로 되돌렸다.
 
-upstream 에 들어 있던 테스트 입력 `cfg/foreman_part_qcif.yuv`, `foreman_part_qcif_422.yuv`, `foreman_part_qcif_444.yuv` (합계 약 0.5 MB)는
-레포 규칙(`*.yuv` 미업로드)에 따라 이 레포에 포함하지 않았다. `cfg/encoder.cfg` 기본 입력으로 돌리려면 upstream 저장소에서 받아야 한다.
+upstream 테스트 입력 `cfg/foreman_part_qcif.yuv`, `foreman_part_qcif_422.yuv`, `foreman_part_qcif_444.yuv` (합계 약 0.5 MB)는
+`*.yuv` 미업로드 규칙의 예외로 upstream 과 같은 내용 그대로 포함했다(`.gitignore` 의 `!/JM/cfg/foreman_part_qcif*.yuv`).
 
 ## 수정한 파일
 
@@ -63,6 +65,12 @@ upstream 에 들어 있던 테스트 입력 `cfg/foreman_part_qcif.yuv`, `forema
 
 HM/VTM 과 달리 **residual 도 크롭되지 않는다**. 1008x756 입력이면 residual/deblock 모두 768행이고, 분석 시 위쪽 756행만 쓴다 (`analysis/common/io_utils.py` 의 `--codec AVC` 가 처리).
 
+## 수정 전/후 출력 비교 (`Fix:` 커밋)
+
+WSL Ubuntu 20.04 + gcc 9.4 에서 `Fix:` 커밋 적용 전/후 디코더를 각각 빌드해, 200x118 크기 9프레임 fern 잘라낸 영상(AI, RA)으로 비교했다.
+- 출력 경로를 지정하는 일반적인 사용법(`-p ResidualDir=... -p DeblockDir=...`)에서 residual / deblock before·after / 복원 yuv 파일이 **바이트 단위로 같다**.
+- `-p ResidualDir=x/y/res -p DeblockDir=p/q/dbk` 처럼 상위 폴더가 없는 경로: 수정 전 0개 → 수정 후 9개 모두 저장, 내용은 일반 실행과 같다.
+
 ## 빌드
 
 upstream 과 같다 (CMake). Linux 기준 `bin/lencod_static`, `bin/ldecod_static` 가 생긴다.
@@ -74,7 +82,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j
 ```
 
-- 기존 산출물은 Linux gcc 9.4 빌드. 위 명령은 이 레포에서 다시 실행해 보지 않았다 (**미검증**).
+- 이 레포의 소스로 위 명령을 WSL Ubuntu 20.04 + gcc 9.4 + cmake 3.24 에서 실행해 빌드되는 것을 확인했다 (`make -j12`).
 - WIN32 경로는 `_mkdir` 를 쓰지만 `<direct.h>` include 가 없어 MSVC 에서 컴파일 경고/오류가 날 수 있다 (**미검증**).
 
 ## 인코딩 → 디코딩(추출) 예시

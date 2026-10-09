@@ -58,12 +58,13 @@ deblocking 전/후 차이는 blocking artifact 가 어디에 얼마나 강하게
 - **(로컬 결과 있음)**: 이 레포에 오기 전 Linux 에서 실제로 돌려 결과가 남아 있는 명령. 출력 파일 크기를 확인했다.
 - **(미검증)**: 이 레포 정리 중에는 실행해 보지 않은 명령.
 
-빌드는 세 코덱 모두 다시 해 보지 않았다. 추가 코드가 POSIX `mkdir` 을 쓰므로 Linux/macOS 를 전제로 한다.
+빌드는 세 코덱 모두 WSL Ubuntu 20.04 + gcc 9.4 에서 확인했다. 추가 코드가 POSIX `mkdir` 을 쓰므로 Linux/macOS 를 전제로 한다(MSVC 빌드는 미검증).
+`Fix:` 커밋(HM residual 저장 조건, 세 코덱의 출력 폴더 재귀 생성) 전/후 디코더 출력이 일반 사용에서 바이트 단위로 같은 것도 작은 영상으로 확인했다(각 코덱 README 참고).
 
 ### HM (HEVC) — 자세한 내용: [HM/README.md](HM/README.md)
 
 ```bash
-# ① 빌드 (미검증)
+# ① 빌드 (WSL Ubuntu 20.04 + gcc 9.4 에서 확인)
 cd HM && mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j && cd ..
 
 # ② 인코딩: cfg/encoder_intra_main.cfg, QP32  (로컬 결과 있음, hm.sh)
@@ -71,8 +72,7 @@ cd HM && mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && ma
     -wdt 1008 -hgt 756 -fr 30 --FrameSkip=0 --FramesToBeEncoded=20 --InputBitDepth=8 --InputChromaFormat=420 --InternalBitDepth=8 \
     --QP=32 --ConformanceWindowMode=1
 
-# ③ 디코딩 + 추출 (출력 폴더의 상위 폴더는 미리 있어야 함)  (로컬 결과 있음)
-mkdir -p ./Compressed/LLFF/HEVC/fern/QP32
+# ③ 디코딩 + 추출 (출력 폴더는 상위 폴더까지 디코더가 만든다)  (로컬 결과 있음)
 ./bin/TAppDecoderStatic -b ./data/fern_ai.bin -o ./data/fern_dec_ai.yuv \
     --ResidualDir=./Compressed/LLFF/HEVC/fern/QP32/residual --DeblockDir=./Compressed/LLFF/HEVC/fern/QP32/deblock
 
@@ -83,7 +83,7 @@ python HM.py --input-root ./data --dataset LLFF
 ### VTM (VVC) — 자세한 내용: [VTM/README.md](VTM/README.md)
 
 ```bash
-# ① 빌드 (미검증)
+# ① 빌드 (WSL Ubuntu 20.04 + gcc 9.4 에서 확인)
 cd VTM && mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j && cd ..
 
 # ② 인코딩: cfg/encoder_intra_vtm.cfg, QP32  (로컬 결과 있음, vtm.sh)
@@ -92,7 +92,6 @@ cd VTM && mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && m
     --InternalBitDepth=8 --FrameSkip=0 --FramesToBeEncoded=20
 
 # ③ 디코딩 + 추출  (로컬 결과 있음)
-mkdir -p ./Compressed/LLFF/VVC/fern/QP32
 ./bin/DecoderAppStatic -b ./vtm_data/fern_ai.bin -o ./vtm_data/fern_ai.yuv \
     --ResidualDir=./Compressed/LLFF/VVC/fern/QP32/residual --DeblockDir=./Compressed/LLFF/VVC/fern/QP32/deblock
 
@@ -103,7 +102,7 @@ python VTM.py --input-root ./data --dataset LLFF
 ### JM (AVC) — 자세한 내용: [JM/README.md](JM/README.md)
 
 ```bash
-# ① 빌드 (미검증)
+# ① 빌드 (WSL Ubuntu 20.04 + gcc 9.4 에서 확인)
 cd JM && mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j && cd ..
 
 # ② 인코딩: cfg/encoder.cfg, all-intra QP32  (로컬 결과 있음, jm.sh)
@@ -112,7 +111,6 @@ cd JM && mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && ma
     -p QPISlice=32 -p IntraPeriod=1 -p NumberBFrames=0 -p FramesToBeEncoded=20
 
 # ③ 디코딩 + 추출 (cfg/decoder.cfg). 아래처럼 Compressed 구조로 쓰는 것은 미검증, jm_data/ 로 쓰는 jm.sh 원래 경로는 로컬 결과 있음
-mkdir -p ./Compressed/LLFF/AVC/fern/QP32
 ./bin/ldecod_static -d ./cfg/decoder.cfg -p InputFile="./jm_data/fern_enc_ai.264" -p OutputFile="./jm_data/fern_dec_ai.yuv" \
     -p RefFile="./jm_data/fern_recon_ai.yuv" \
     -p ResidualDir="./Compressed/LLFF/AVC/fern/QP32/residual" -p DeblockDir="./Compressed/LLFF/AVC/fern/QP32/deblock"
@@ -151,6 +149,7 @@ python analysis/01_deblock_diff.py --codec HEVC --root HM/Compressed/LLFF --scen
 ```
 codec_final/
 ├─ README.md                 # 이 파일
+├─ LICENSE                   # MIT (이 레포에서 새로 작성한 코드)
 ├─ .gitignore
 ├─ JM/                       # H.264/AVC JM 19.1 + 추출 기능   → JM/README.md
 │  ├─ patches/residual_deblock_vs_upstream.patch
@@ -177,16 +176,25 @@ codec_final/
 
 ## 라이선스 / 출처
 
-- `JM/`: ITU-T / ISO/IEC 고지 ([COPYRIGHT_ITU.txt](JM/COPYRIGHT_ITU.txt), [COPYRIGHT_ISO_IEC.txt](JM/COPYRIGHT_ISO_IEC.txt), [disclaimer.txt](JM/disclaimer.txt)). 출처 https://vcgit.hhi.fraunhofer.de/jvet/JM
-- `HM/`: BSD 3-Clause ([HM/COPYING](HM/COPYING)). 출처 https://vcgit.hhi.fraunhofer.de/jvet/HM
-- `VTM/`: BSD 3-Clause ([VTM/COPYING](VTM/COPYING)). 출처 https://vcgit.hhi.fraunhofer.de/jvet/VVCSoftware_VTM
-- 원본 소스의 저작권 표기는 모두 그대로 두었다. 추가한 코드와 `analysis/` 의 라이선스는 아직 정하지 않았다.
+**HM / JM / VTM 폴더는 각각 upstream 라이선스를 따른다 (각 폴더의 COPYING 또는 라이선스 고지 파일 참고).**
+upstream 소스 파일에 추가·수정한 코드(`source/` 안의 변경, `patches/` 의 diff)도 해당 파일의 upstream 라이선스를 따른다.
+
+| 폴더 | 라이선스 | 파일 | 출처 |
+|---|---|---|---|
+| `HM/` | BSD 3-Clause | [HM/COPYING](HM/COPYING) | https://vcgit.hhi.fraunhofer.de/jvet/HM |
+| `VTM/` | BSD 3-Clause | [VTM/COPYING](VTM/COPYING) | https://vcgit.hhi.fraunhofer.de/jvet/VVCSoftware_VTM |
+| `JM/` | ITU-T / ISO/IEC 저작권 고지 | [COPYRIGHT_ITU.txt](JM/COPYRIGHT_ITU.txt), [COPYRIGHT_ISO_IEC.txt](JM/COPYRIGHT_ISO_IEC.txt), [disclaimer.txt](JM/disclaimer.txt) | https://vcgit.hhi.fraunhofer.de/jvet/JM |
+
+원본 소스의 저작권 표기는 모두 그대로 두었다.
+
+**이 레포에서 새로 작성한 파일은 MIT 라이선스**다 ([LICENSE](LICENSE)).
+- 대상: `analysis/` 전체, 각 코덱 폴더의 `tools/`, `HM/HM.py`, `VTM/VTM.py`, `HM/hm.sh`, `JM/jm.sh`, `VTM/vtm.sh`, 이 README 와 각 코덱의 `README.md`.
 
 ## 올리지 않는 것 (.gitignore)
 
 | 대상 | 이유 |
 |---|---|
-| `*.yuv`, `*.bin`, `*.264`, `*.hevc`, `*.vvc`, `*.npy`(samples 제외), `Compressed/`, `JM/jm_data/`, `VTM/vtm_data/` | 영상·비트스트림·추출 데이터. 수백 MB~수 GB 이고 스크립트로 다시 만들 수 있다. upstream JM 의 테스트 입력 `JM/cfg/foreman_part_qcif*.yuv` 3개도 이 규칙으로 빠진다 |
+| `*.yuv`, `*.bin`, `*.264`, `*.hevc`, `*.vvc`, `*.npy`(samples 제외), `Compressed/`, `JM/jm_data/`, `VTM/vtm_data/` | 영상·비트스트림·추출 데이터. 수백 MB~수 GB 이고 스크립트로 다시 만들 수 있다. 예외로 upstream JM 테스트 입력 `JM/cfg/foreman_part_qcif*.yuv` 3개(약 0.5 MB)는 올린다 |
 | `build/`, `bin/`, `lib/`, `*.o`, `*.a`, 실행 파일 | 빌드 산출물 |
 | `*.log`, `*_log.txt`, JM `bin/*.dat`, `leakybucketparam.cfg` | 실행 로그와 인코더가 만드는 임시 파일 |
 | `analysis/outputs/`, `HM/analysis/` | 분석 출력. 원본 analysis 는 정리본(`analysis/`)과 중복 |

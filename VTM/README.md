@@ -20,6 +20,8 @@ upstream 파일(`README_upstream.md`, `.gitlab-ci.yml`)에 남은 `VVCSoftware_V
 | 기준 커밋 | `ba166fd31acc050329d40012cd945b52023fdf57` (2026-02-05) |
 | 라이선스 | BSD 3-Clause, [COPYING](COPYING). 원본 저작권 표기를 유지한다 |
 
+이 폴더의 upstream 파일과 그 안에 추가·수정한 코드(`source/`, `patches/`)는 위 upstream 라이선스를 따른다. 이 레포에서 새로 작성한 `tools/`, 실행 스크립트(`VTM.py, vtm.sh`), 이 `README.md` 는 MIT 라이선스다 ([../LICENSE](../LICENSE)).
+
 수정 판정은 `git -c core.fileMode=false diff` 기준이다. 권한만 바뀐 파일과 심볼릭 링크가 풀린 `cfg/keystore/ca/d8e118e3.0` 은 수정으로 보지 않았다.
 
 ## 수정한 파일
@@ -65,6 +67,12 @@ upstream 파일(`README_upstream.md`, `.gitlab-ci.yml`)에 남은 `VVCSoftware_V
 
 로컬에서 만든 `vtm_data/residual_{ai,ra}`, `vtm_data/deblock_{ai,ra}` 의 파일 크기가 위 값과 일치하는 것을 확인했다.
 
+## 수정 전/후 출력 비교 (`Fix:` 커밋)
+
+WSL Ubuntu 20.04 + gcc 9.4 에서 `Fix:` 커밋 적용 전/후 디코더를 각각 빌드해, 200x118 크기 9프레임 fern 잘라낸 영상(AI, RA)으로 비교했다.
+- 출력 경로를 지정하는 일반적인 사용법(`-o` + `--ResidualDir` + `--DeblockDir`)에서 residual / deblock before·after / 복원 yuv 파일이 **바이트 단위로 같다**.
+- `--ResidualDir=x/y/res --DeblockDir=p/q/dbk` 처럼 상위 폴더가 없는 경로: 수정 전 0개 → 수정 후 9개 모두 저장, 내용은 일반 실행과 같다.
+
 ## 빌드
 
 upstream 과 같다 (CMake). Linux 기준 `bin/EncoderAppStatic`, `bin/DecoderAppStatic` 가 생긴다.
@@ -76,7 +84,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j
 ```
 
-- 기존 산출물은 Linux 빌드. 위 명령은 이 레포에서 다시 실행해 보지 않았다 (**미검증**).
+- 이 레포의 소스로 위 명령을 WSL Ubuntu 20.04 + gcc 9.4 + cmake 3.24 에서 실행해 빌드되는 것을 확인했다 (`make -j12`).
 - 추가 코드가 POSIX `mkdir(path, 0755)` 를 쓰므로 **MSVC(Windows) 빌드는 안 될 가능성이 높다 (미검증)**.
 
 ## 인코딩 → 디코딩(추출) 예시

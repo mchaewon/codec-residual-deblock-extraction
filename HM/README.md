@@ -17,6 +17,8 @@ upstream 원래 README 는 [README_upstream.md](README_upstream.md) 로 이름�
 | 기준 커밋 | `dbe8d28db3077e2f35eff000adc17377f09027a2` (2026-01-28) |
 | 라이선스 | BSD 3-Clause, [COPYING](COPYING). 원본 소스의 저작권 표기는 모두 유지한다 |
 
+이 폴더의 upstream 파일과 그 안에 추가·수정한 코드(`source/`, `patches/`)는 위 upstream 라이선스를 따른다. 이 레포에서 새로 작성한 `tools/`, 실행 스크립트(`HM.py, hm.sh`), 이 `README.md` 는 MIT 라이선스다 ([../LICENSE](../LICENSE)).
+
 수정 파일 판정은 upstream 저장소 기준 `git -c core.fileMode=false diff` 로 했다. Windows 에서 권한(mode)만 바뀐 파일과,
 upstream 에서 심볼릭 링크인 `cfg/keystore/ca/d8e118e3.0` 이 일반 파일로 풀린 것(내용 동일한 인증서)은 수정으로 보지 않았다.
 
@@ -64,6 +66,13 @@ upstream 에서 심볼릭 링크인 `cfg/keystore/ca/d8e118e3.0` 이 일반 파�
 
 residual(756행)과 deblock(760행)은 크기가 다르다. 같이 분석할 때는 deblock 의 위쪽 756행만 쓴다 (`analysis/common/io_utils.py` 가 자동으로 맞춤).
 
+## 수정 전/후 출력 비교 (`Fix:` 커밋)
+
+WSL Ubuntu 20.04 + gcc 9.4 에서 `Fix:` 커밋 적용 전/후 디코더를 각각 빌드해, 200x118 크기 9프레임 fern 잘라낸 영상(AI, RA)으로 비교했다.
+- 출력 경로를 지정하는 일반적인 사용법(`-o` + `--ResidualDir` + `--DeblockDir`)에서 residual / deblock before·after / 복원 yuv 파일이 **바이트 단위로 같다**.
+- `--ResidualDir=x/y/res --DeblockDir=p/q/dbk` 처럼 상위 폴더가 없는 경로: 수정 전 0개 → 수정 후 9개 모두 저장, 내용은 일반 실행과 같다.
+- `-o` 없이 `--ResidualDir` 만 준 경우: 수정 전 AI 0/9, RA 4/9 → 수정 후 9/9 저장. 내용은 일반 실행과 같다.
+
 ## 빌드
 
 upstream 과 같다 (CMake). Linux 기준, 아래 명령으로 `bin/TAppEncoderStatic`, `bin/TAppDecoderStatic` 가 생긴다.
@@ -75,7 +84,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j
 ```
 
-- 이 폴더의 기존 산출물은 Linux gcc 9.4 로 빌드된 것이다. 위 명령은 **이 레포에서 다시 실행해 보지는 않았다 (미검증)**.
+- 이 레포의 소스로 위 명령을 WSL Ubuntu 20.04 + gcc 9.4 + cmake 3.24 에서 실행해 빌드되는 것을 확인했다 (`make -j12`).
 - 추가 코드는 `mkdir(path, 0755)` (POSIX `sys/stat.h`) 를 쓰므로 **MSVC(Windows) 빌드는 안 될 가능성이 높다 (미검증)**.
 
 ## 인코딩 → 디코딩(추출) 예시
