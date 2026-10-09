@@ -1117,6 +1117,34 @@ DecodedPicList *get_one_avail_dec_pic_from_list(DecodedPicList *pDecPicList, int
 
   return pPic;
 }
+
+/* residual/deblock 출력 폴더 생성: 상위 폴더가 없어도 만든다 (mkdir -p) */
+static void mkdir_recursive(const char *dir)
+{
+  char path[FILE_NAME_SIZE];
+  size_t i;
+  snprintf(path, sizeof(path), "%s", dir);
+  for (i = 1; path[i] != '\0'; i++)
+  {
+    if (path[i] == '/' || path[i] == '\\')
+    {
+      char c = path[i];
+      path[i] = '\0';
+#ifdef WIN32
+      _mkdir(path);
+#else
+      mkdir(path, 0755);
+#endif
+      path[i] = c;
+    }
+  }
+#ifdef WIN32
+  _mkdir(path);
+#else
+  mkdir(path, 0755);
+#endif
+}
+
 /************************************
 Interface: OpenDecoder
 Return: 
@@ -1225,13 +1253,13 @@ int OpenDecoder(InputParameters *p_Inp)
   if (strlen(p_Inp->DeblockDir) > 0) {
     char path[512];
 #ifdef WIN32
-    _mkdir(p_Inp->DeblockDir);
+    mkdir_recursive(p_Inp->DeblockDir);
     snprintf(path, sizeof(path), "%s/before", p_Inp->DeblockDir);
     _mkdir(path);
     snprintf(path, sizeof(path), "%s/after",  p_Inp->DeblockDir);
     _mkdir(path);
 #else
-    mkdir(p_Inp->DeblockDir, 0755);
+    mkdir_recursive(p_Inp->DeblockDir);
     snprintf(path, sizeof(path), "%s/before", p_Inp->DeblockDir);
     mkdir(path, 0755);
     snprintf(path, sizeof(path), "%s/after",  p_Inp->DeblockDir);
@@ -1240,9 +1268,9 @@ int OpenDecoder(InputParameters *p_Inp)
   }
   if (strlen(p_Inp->ResidualDir) > 0) {
 #ifdef WIN32
-    _mkdir(p_Inp->ResidualDir);
+    mkdir_recursive(p_Inp->ResidualDir);
 #else
-    mkdir(p_Inp->ResidualDir, 0755);
+    mkdir_recursive(p_Inp->ResidualDir);
 #endif
   }
   // ────────────────────────────────────────────────────────────────

@@ -119,7 +119,7 @@ make -j
 1. **deblocking 이 꺼진 픽처는 아무것도 저장하지 않음**: 저장 코드가 `exit_picture` 의 `if (!iDeblockMode && bDeblockEnable...)` 안에 있다. 픽처의 모든 슬라이스가 `disable_deblocking_filter_idc == 1` 이면 residual 도 저장되지 않는다.
 2. **residual 정의가 HM/VTM 과 다름**: inverse transform 출력이 아니라 `clip(예측+residual) − 예측` 이다. 복원값이 0 또는 255 로 포화된 픽셀에서는 실제 residual 보다 작다.
 3. **크롭 안 함**: residual 과 deblock 모두 MB 정렬 크기(예: 768행)로 저장된다.
-4. **폴더 생성이 한 단계뿐**: `mkdir` 한 번이라 상위 폴더가 없으면 실패한다(에러 메시지 없음).
+4. **(수정됨, `Fix:` 커밋) 폴더 생성이 한 단계뿐이었음**: 지금은 `OpenDecoder` 에서 `mkdir_recursive` (`ldecod.c`) 로 `ResidualDir`, `DeblockDir` 의 상위 폴더까지 만든다. 다른 쓰기 실패는 여전히 메시지 없이 넘어간다.
 5. **8-bit 전용**: deblock 덤프는 0..255 clip 후 uint8.
 6. **디버그 출력**: `decode_one_macroblock` 이 주소 0 MB 마다 `[DEBUG] MB0 mb_rres min=.., max=..` 를 stdout 에 찍는다(ResidualDir 지정 여부와 무관). 디코딩 결과에는 영향 없음.
 7. `mbuffer.c` 의 `memset(..., size_y*size_x*sizeof(uint16))` 은 `int` 버퍼의 절반만 지우지만, 버퍼가 `calloc` 으로 할당돼 이미 0 이므로 실제 영향은 없다.
