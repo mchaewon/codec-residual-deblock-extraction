@@ -28,7 +28,7 @@ index ea9db136d..0b40faaf7 100644
    std::string   m_SEIFGSFileName;                     ///< output reconstruction file name
  #endif
 diff --git a/source/App/TAppDecoder/TAppDecTop.cpp b/source/App/TAppDecoder/TAppDecTop.cpp
-index c1be041c4..b2b30f52f 100644
+index c1be041c4..81369d1d4 100644
 --- a/source/App/TAppDecoder/TAppDecTop.cpp
 +++ b/source/App/TAppDecoder/TAppDecTop.cpp
 @@ -40,6 +40,7 @@
@@ -46,7 +46,7 @@ index c1be041c4..b2b30f52f 100644
 +
 +  m_cTDecTop.setDeblockDir(m_deblockDir);
 +  if (!m_residualDir.empty())
-+        mkdir(m_residualDir.c_str(), 0755);
++        mkdirRecursive(m_residualDir);
  #if MCTS_ENC_CHECK
    m_cTDecTop.setTMctsCheckEnabled(m_tmctsCheck);
  #endif
@@ -244,10 +244,10 @@ index fc8aecdbe..443b943c6 100644
  
  
 diff --git a/source/Lib/TLibCommon/TComLoopFilter.h b/source/Lib/TLibCommon/TComLoopFilter.h
-index 6ef2a1dbb..db893ac1b 100644
+index 6ef2a1dbb..b035930d7 100644
 --- a/source/Lib/TLibCommon/TComLoopFilter.h
 +++ b/source/Lib/TLibCommon/TComLoopFilter.h
-@@ -37,7 +37,7 @@
+@@ -37,13 +37,26 @@
  
  #ifndef __TCOMLOOPFILTER__
  #define __TCOMLOOPFILTER__
@@ -256,7 +256,26 @@ index 6ef2a1dbb..db893ac1b 100644
  #include "CommonDef.h"
  #include "TComPic.h"
  
-@@ -61,6 +61,7 @@ private:
+ //! \ingroup TLibCommon
+ //! \{
+ 
++/// residual/deblock 출력 폴더 생성: 상위 폴더가 없어도 만든다 (mkdir -p)
++static inline Void mkdirRecursive(const std::string& dir)
++{
++  for (size_t i = 1; i < dir.size(); i++)
++  {
++    if (dir[i] == '/' || dir[i] == '\\')
++    {
++      mkdir(dir.substr(0, i).c_str(), 0755);
++    }
++  }
++  mkdir(dir.c_str(), 0755);
++}
++
+ #define DEBLOCK_SMALLEST_BLOCK  8
+ 
+ // ====================================================================================================================
+@@ -61,6 +74,7 @@ private:
    LFCUParam m_stLFCUParam;                   ///< status structure
  
    Bool      m_bLFCrossTileBoundary;
@@ -264,7 +283,7 @@ index 6ef2a1dbb..db893ac1b 100644
  
  protected:
    /// CU-level deblocking function
-@@ -130,6 +131,15 @@ public:
+@@ -130,6 +144,15 @@ public:
  
    /// picture-level deblocking filter
    Void loopFilterPic( TComPic* pcPic );
@@ -272,7 +291,7 @@ index 6ef2a1dbb..db893ac1b 100644
 +  { m_deblockDir = dir; 
 +    if (!dir.empty())
 +    {
-+      mkdir(dir.c_str(), 0755);
++      mkdirRecursive(dir);
 +      mkdir((dir + "/before").c_str(), 0755);
 +      mkdir((dir + "/after").c_str(), 0755);
 +    }

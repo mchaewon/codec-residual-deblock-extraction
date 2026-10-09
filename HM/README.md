@@ -132,7 +132,9 @@ python HM.py --input-root /path/to/data --dataset LLFF --cfg cfg/encoder_randoma
    - `--ResidualDir` 만 주고 `-o` 를 안 주면 `xWriteOutput` 에서 나가는 픽처의 residual 은 빠지고 마지막 `xFlushOutput` 분만 저장됐다.
    - 지금은 `xWriteOutput` / `xFlushOutput` 모두 `!m_residualDir.empty()` 로 검사한다. `-o` 유무와 관계없이 `--ResidualDir` 를 주면 출력되는 모든 프레임이 저장된다.
    - `hm.sh`, `HM.py` 처럼 `-o` 와 `--ResidualDir` 를 같이 주는 경우의 출력은 바뀌지 않는다.
-2. **폴더 생성이 한 단계뿐**: `ResidualDir`, `DeblockDir` 는 `mkdir` 를 한 번만 하므로 상위 폴더가 없으면 생성에 실패하고 파일도 써지지 않는다(에러 메시지 없음). `HM.py` 는 미리 `os.makedirs` 한다.
+2. **(수정됨, `Fix:` 커밋) 폴더 생성이 한 단계뿐이었음**: 원래 `ResidualDir`, `DeblockDir` 는 `mkdir` 를 한 번만 해서, 상위 폴더가 없으면 파일이 써지지 않았다(에러 메시지 없음).
+   - 지금은 `mkdirRecursive` (`TComLoopFilter.h`) 로 상위 폴더까지 만든다. 예: `--ResidualDir=a/b/res`.
+   - 다른 쓰기 실패(권한 등)는 여전히 메시지 없이 넘어간다.
 3. **8-bit 전용**: deblock 덤프는 `Clip3(0,255)` 후 uint8 로 저장한다. 10-bit 입력/내부 비트심도에서는 값이 잘려 깨진다. residual 은 int16 이라 영향 없음.
 4. **크기 불일치**: residual 은 크롭(756행), deblock 은 coded(760행). 분석 시 맞춰야 한다.
 5. residual 버퍼는 `--ResidualDir` 를 안 줘도 모든 픽처에 대해 만들어진다(메모리만 더 씀, 출력은 없음).

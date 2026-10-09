@@ -410,7 +410,7 @@ Void TAppDecTop::xInitDecLib()
 
   m_cTDecTop.setDeblockDir(m_deblockDir);
   if (!m_residualDir.empty())
-        mkdir(m_residualDir.c_str(), 0755);
+        mkdirRecursive(m_residualDir);
 #if MCTS_ENC_CHECK
   m_cTDecTop.setTMctsCheckEnabled(m_tmctsCheck);
 #endif
