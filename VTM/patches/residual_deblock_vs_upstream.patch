@@ -1,0 +1,487 @@
+diff --git a/source/App/DecoderApp/DecApp.cpp b/source/App/DecoderApp/DecApp.cpp
+index b8062f683..3634888b1 100644
+--- a/source/App/DecoderApp/DecApp.cpp
++++ b/source/App/DecoderApp/DecApp.cpp
+@@ -40,6 +40,7 @@
+ #include <vector>
+ #include <stdio.h>
+ #include <fcntl.h>
++#include <sys/stat.h> 
+ 
+ #include "DecApp.h"
+ #include "DecoderLib/AnnexBread.h"
+@@ -938,6 +939,10 @@ void DecApp::xCreateDecLib()
+   );
+   m_cDecLib.setDecodedPictureHashSEIEnabled(m_decodedPictureHashSEIEnabled);
+ 
++  m_cDecLib.setDeblockDir(m_deblockDir);
++  if (!m_residualDir.empty())
++        mkdir(m_residualDir.c_str(), 0755);
++
+ #if JVET_AJ0151_DSC_SEI
+   m_cDecLib.setKeyStoreParameters(m_keyStoreDir, m_trustStoreDir);
+ #endif
+@@ -1124,6 +1129,48 @@ void DecApp::xWriteOutput( PicList* pcListPic, uint32_t tId )
+     while (iterPic != pcListPic->end())
+     {
+       pcPic = *(iterPic);
++      // ★★★ Residual 저장 - 출력 조건과 무관하게 처리 ★★★
++      if(pcPic->neededForOutput && pcPic->getResidualBuffer() && !m_residualDir.empty())
++      {
++        // printf("[ResOut] poc=%d saving residual\n", pcPic->getPOC());
++        fflush(stdout);
++
++        char residualFileName[256];
++        sprintf(residualFileName, "%s/residual_%04d.yuv", m_residualDir.c_str(), pcPic->getPOC()+1);
++
++        FILE* fpResidual = fopen(residualFileName, "wb");
++        if(fpResidual)
++        {
++          PelStorage* resBuf = pcPic->getResidualBuffer();
++          const Window& conf = pcPic->getConformanceWindow();
++          ChromaFormat chromaFormatIdc = pcPic->m_chromaFormatIdc;
++
++          PelBuf bufY = resBuf->getBuf(COMPONENT_Y);
++          int widthY  = bufY.width
++                      - conf.getWindowLeftOffset()  * SPS::getWinUnitX(chromaFormatIdc)
++                      - conf.getWindowRightOffset()  * SPS::getWinUnitX(chromaFormatIdc);
++          int heightY = bufY.height
++                      - conf.getWindowTopOffset()    * SPS::getWinUnitY(chromaFormatIdc)
++                      - conf.getWindowBottomOffset() * SPS::getWinUnitY(chromaFormatIdc);
++          int offsetY = conf.getWindowTopOffset() * SPS::getWinUnitY(chromaFormatIdc) * bufY.stride
++                      + conf.getWindowLeftOffset() * SPS::getWinUnitX(chromaFormatIdc);
++
++          for(int y = 0; y < heightY; y++)
++            fwrite(bufY.buf + offsetY + y * bufY.stride, sizeof(Pel), widthY, fpResidual);
++
++          fclose(fpResidual);
++          // printf("[ResOut] poc=%d saved: %s\n", pcPic->getPOC(), residualFileName);
++          fflush(stdout);
++        }
++        else
++        {
++          fprintf(stderr, "[ResOut] Failed to open: %s\n", residualFileName);
++        }
++
++        // 저장 후 버퍼 해제
++        pcPic->destroyResidualBuffer();
++      }
++      // ★★★ Residual 저장 끝 ★★★
+ 
+       if(pcPic->neededForOutput && pcPic->getPOC() >= m_iPOCLastDisplay &&
+         (numPicsNotYetDisplayed >  maxNumReorderPicsHighestTid || dpbFullness > maxDecPicBufferingHighestTid))
+@@ -1382,7 +1429,48 @@ void DecApp::xFlushOutput( PicList* pcListPic, const int layerId )
+         iterPic++;
+         continue;
+       }
++      // ★★★ Residual 저장 - 출력 조건과 무관하게 처리 ★★★
++      if(pcPic->neededForOutput && pcPic->getResidualBuffer() && !m_residualDir.empty())
++      {
++        // printf("[ResOut] poc=%d saving residual\n", pcPic->getPOC());
++        fflush(stdout);
++
++        char residualFileName[256];
++        sprintf(residualFileName, "%s/residual_%04d.yuv", m_residualDir.c_str(), pcPic->getPOC()+1);
+ 
++        FILE* fpResidual = fopen(residualFileName, "wb");
++        if(fpResidual)
++        {
++          PelStorage* resBuf = pcPic->getResidualBuffer();
++          const Window& conf = pcPic->getConformanceWindow();
++          ChromaFormat chromaFormatIdc = pcPic->m_chromaFormatIdc;
++
++          PelBuf bufY = resBuf->getBuf(COMPONENT_Y);
++          int widthY  = bufY.width
++                      - conf.getWindowLeftOffset()  * SPS::getWinUnitX(chromaFormatIdc)
++                      - conf.getWindowRightOffset()  * SPS::getWinUnitX(chromaFormatIdc);
++          int heightY = bufY.height
++                      - conf.getWindowTopOffset()    * SPS::getWinUnitY(chromaFormatIdc)
++                      - conf.getWindowBottomOffset() * SPS::getWinUnitY(chromaFormatIdc);
++          int offsetY = conf.getWindowTopOffset() * SPS::getWinUnitY(chromaFormatIdc) * bufY.stride
++                      + conf.getWindowLeftOffset() * SPS::getWinUnitX(chromaFormatIdc);
++
++          for(int y = 0; y < heightY; y++)
++            fwrite(bufY.buf + offsetY + y * bufY.stride, sizeof(Pel), widthY, fpResidual);
++
++          fclose(fpResidual);
++          // printf("[ResOut] poc=%d saved: %s\n", pcPic->getPOC(), residualFileName);
++          fflush(stdout);
++        }
++        else
++        {
++          fprintf(stderr, "[ResOut] Failed to open: %s\n", residualFileName);
++        }
++
++        // 저장 후 버퍼 해제
++        pcPic->destroyResidualBuffer();
++      }
++      // ★★★ Residual 저장 끝 ★★★
+       if (pcPic->neededForOutput)
+       {
+         const SPS*    sps  = pcPic->cs->sps;
+diff --git a/source/App/DecoderApp/DecAppCfg.cpp b/source/App/DecoderApp/DecAppCfg.cpp
+index 73a62c0b6..755f65c6c 100644
+--- a/source/App/DecoderApp/DecAppCfg.cpp
++++ b/source/App/DecoderApp/DecAppCfg.cpp
+@@ -101,7 +101,9 @@ bool DecAppCfg::parseCfg( int argc, char* argv[] )
+   ("SEIAnnotatedRegionsInfoFilename", m_annotatedRegionsSEIFileName,   std::string(""), "Annotated regions output file name. If empty, no object information will be saved (ignore SEI message)\n")
+   ("SEIObjectMaskInfosFilename", m_objectMaskInfoSEIFileName,          std::string(""), "Object mask information output file name. If empty, no object mask information will be saved (ignore SEI message)\n")
+   ("OutputDecodedSEIMessagesFilename", m_outputDecodedSEIMessagesFilename, std::string(""), "When non empty, output decoded SEI messages to the indicated file. If file is '-', then output to stdout\n")
+-#if JVET_S0257_DUMP_360SEI_MESSAGE
++  ("ResidualDir",               m_residualDir,                         std::string(""), "Output directory for residual frames")
++  ("DeblockDir",                m_deblockDir,                          std::string(""), "Directory to save deblocking YUV files")
++  #if JVET_S0257_DUMP_360SEI_MESSAGE
+   ("360DumpFile",               m_outputDecoded360SEIMessagesFilename, std::string(""), "When non empty, output decoded 360 SEI messages to the indicated file.\n")
+ #endif
+   ("SEIPackedRegionsInfoFilename", m_packedRegionsInfoSEIFileName,     std::string(""), "Packed regions info output file name. If empty, no object information will be saved\n")
+diff --git a/source/App/DecoderApp/DecAppCfg.h b/source/App/DecoderApp/DecAppCfg.h
+index 5bbc3fa6e..8586e1a22 100644
+--- a/source/App/DecoderApp/DecAppCfg.h
++++ b/source/App/DecoderApp/DecAppCfg.h
+@@ -81,6 +81,8 @@ protected:
+   std::string   m_objectMaskInfoSEIFileName;          ///< object mask information file name
+   std::vector<int> m_targetDecLayerIdSet;             ///< set of LayerIds to be included in the sub-bitstream extraction process.
+   std::string   m_outputDecodedSEIMessagesFilename;   ///< filename to output decoded SEI messages to. If '-', then use stdout. If empty, do not output details.
++  std::string   m_residualDir;
++  std::string   m_deblockDir;
+ #if JVET_S0257_DUMP_360SEI_MESSAGE
+   std::string   m_outputDecoded360SEIMessagesFilename;   ///< filename to output decoded 360 SEI messages to.
+ #endif
+diff --git a/source/Lib/CommonLib/DeblockingFilter.cpp b/source/Lib/CommonLib/DeblockingFilter.cpp
+index a7fb4760b..fa8b29f6c 100644
+--- a/source/Lib/CommonLib/DeblockingFilter.cpp
++++ b/source/Lib/CommonLib/DeblockingFilter.cpp
+@@ -43,6 +43,8 @@
+ #include "UnitPartitioner.h"
+ #include "dtrace_codingstruct.h"
+ #include "dtrace_buffer.h"
++#include <fstream>   // ← 이거 추가
++#include <string>    // ← 이거 추가 (to_string 사용 위해)
+ 
+ //! \ingroup CommonLib
+ //! \{
+@@ -1713,3 +1715,36 @@ inline int DeblockingFilter::xCalcDQ(Pel *src, const ptrdiff_t offset) const
+ }
+ 
+ //! \}
++
++void DeblockingFilter::saveYUVForDebug(CodingStructure& cs, const std::string& tag)
++{
++  if (m_deblockDir.empty()) return;
++  
++  const int poc = cs.slice->getPOC();
++  char pocStr[16];
++  snprintf(pocStr, sizeof(pocStr), "%04d", poc + 1);
++
++  std::string filename = m_deblockDir + "/" + tag + "/deblock_" + pocStr + ".yuv";
++  std::ofstream ofs(filename, std::ios::binary);
++  if (!ofs) { printf("[DBF] Failed to open: %s\n", filename.c_str()); return; }
++
++  const ComponentID comps[3] = { COMPONENT_Y, COMPONENT_Cb, COMPONENT_Cr };
++  for (int c = 0; c < getNumberValidComponents(cs.area.chromaFormat); c++)
++  {
++    const CPelBuf buf = cs.picture->getRecoBuf().get(comps[c]);
++    const Pel*    base   = buf.buf;
++    const int     width  = buf.width;
++    const int     height = buf.height;
++    const ptrdiff_t stride = buf.stride;
++
++    for (int y = 0; y < height; y++)
++    {
++      const Pel* row = base + y * stride;
++      for (int x = 0; x < width; x++)
++      {
++        uint8_t val = (uint8_t)Clip3(0, 255, (int)row[x]);  // 8bit로 변경
++        ofs.write(reinterpret_cast<const char*>(&val), sizeof(uint8_t));
++      }
++    }
++  }
++}
+diff --git a/source/Lib/CommonLib/DeblockingFilter.h b/source/Lib/CommonLib/DeblockingFilter.h
+index eaa6fbc57..c252885ff 100644
+--- a/source/Lib/CommonLib/DeblockingFilter.h
++++ b/source/Lib/CommonLib/DeblockingFilter.h
+@@ -41,6 +41,7 @@
+ #include "CommonDef.h"
+ #include "Unit.h"
+ #include "Picture.h"
++#include <sys/stat.h> 
+ 
+ //! \ingroup CommonLib
+ //! \{
+@@ -100,6 +101,17 @@ public:
+     HOR,
+     NUM
+   };
++  void setDeblockDir(const std::string& dir)
++  {
++    m_deblockDir = dir;
++
++    if (!dir.empty())
++    {
++      mkdir(dir.c_str(), 0755);
++      mkdir((dir + "/before").c_str(), 0755);
++      mkdir((dir + "/after").c_str(), 0755);
++    }
++  }
+ 
+ private:
+   EnumArray<static_vector<EdgeStrengths, MAX_NUM_PARTS_IN_CTU>, EdgeDir> m_edgeStrengths;
+@@ -118,6 +130,7 @@ private:
+   // shift values to convert location from luma sample units to chroma sample units
+   int m_shiftHor;
+   int m_shiftVer;
++  std::string m_deblockDir;
+ 
+   enum class FilterLen : uint8_t
+   {
+@@ -209,6 +222,8 @@ public:
+ 
+   /// picture-level deblocking filter
+   void deblockingFilterPic        ( CodingStructure& cs );
++  void saveYUVForDebug(CodingStructure& cs, const std::string& tag);
++
+ 
+   static int getBeta              ( const int qp )
+   {
+diff --git a/source/Lib/CommonLib/Picture.cpp b/source/Lib/CommonLib/Picture.cpp
+index 9dcb19ba1..fdeaa3355 100644
+--- a/source/Lib/CommonLib/Picture.cpp
++++ b/source/Lib/CommonLib/Picture.cpp
+@@ -75,6 +75,7 @@ Picture::Picture()
+   unscaledPic = nullptr;
+   m_grainCharacteristic = nullptr;
+   m_grainBuf            = nullptr;
++  m_residualBuffer = nullptr;
+ }
+ 
+ void Picture::create(const bool useWrapAround, const ChromaFormat& _chromaFormat, const Size& size,
+@@ -148,6 +149,7 @@ void Picture::destroy()
+   }
+   m_invColourTransfBuf = nullptr;
+   m_grainBuf           = nullptr;
++  destroyResidualBuffer();
+ }
+ 
+ void Picture::createTempBuffers( const unsigned _maxCUSize, bool useFilterFrame, bool decoder, bool isFgFiltered)
+@@ -1878,3 +1880,45 @@ void Picture::resizeAlfData(const int numEntries)
+     std::fill(m_alfModes[compIdx].begin(), m_alfModes[compIdx].end(), AlfMode::OFF);
+   }
+ }
++// ★ 새로 추가할 함수들 ★
++void Picture::createResidualBuffer()
++{
++  if(!m_residualBuffer && cs)
++  {
++    m_residualBuffer = new PelStorage;
++    
++    const ChromaFormat chromaFmt = cs->area.chromaFormat;
++    const Size lumaSize = cs->area.Y().size();
++    
++    m_residualBuffer->create(chromaFmt, 
++                             Area(0, 0, lumaSize.width, lumaSize.height));
++  }
++}
++
++void Picture::clearResidualBuffer()
++{
++  if(m_residualBuffer)
++  {
++    // Y component
++    PelBuf bufY = m_residualBuffer->getBuf(COMPONENT_Y);
++    memset(bufY.buf, 0, sizeof(Pel) * bufY.stride * bufY.height);
++    
++    // Cb component
++    PelBuf bufCb = m_residualBuffer->getBuf(COMPONENT_Cb);
++    memset(bufCb.buf, 0, sizeof(Pel) * bufCb.stride * bufCb.height);
++    
++    // Cr component
++    PelBuf bufCr = m_residualBuffer->getBuf(COMPONENT_Cr);
++    memset(bufCr.buf, 0, sizeof(Pel) * bufCr.stride * bufCr.height);
++  }
++}
++
++void Picture::destroyResidualBuffer()
++{
++  if(m_residualBuffer)
++  {
++    m_residualBuffer->destroy();
++    delete m_residualBuffer;
++    m_residualBuffer = nullptr;
++  }
++}
+\ No newline at end of file
+diff --git a/source/Lib/CommonLib/Picture.h b/source/Lib/CommonLib/Picture.h
+index 4c7deaa70..46f1c128f 100644
+--- a/source/Lib/CommonLib/Picture.h
++++ b/source/Lib/CommonLib/Picture.h
+@@ -197,6 +197,7 @@ private:
+   Window        m_scalingWindow;
+   int           m_decodingOrderNumber;
+   NalUnitType   m_pictureType;
++  
+ #if GREEN_METADATA_SEI_ENABLED
+   FeatureCounterStruct m_featureCounter;
+ #endif
+@@ -254,13 +255,20 @@ public:
+   bool isEosPresentInPic;
+ 
+   PelStorage m_bufs[NUM_PIC_TYPES];
++  // ★ 추가: Residual buffer ★
++  PelStorage*             m_residualBuffer;
+   const Picture*           unscaledPic;
+ 
+   Hash               m_hashMap;
+   Hash              *getHashMap() { return &m_hashMap; }
+   const Hash        *getHashMap() const { return &m_hashMap; }
+   void               addPictureToHashMapForInter();
+-
++  // ★ 추가: Residual buffer 관련 함수 ★
++  PelStorage*  getResidualBuffer()        { return m_residualBuffer; }
++  void         createResidualBuffer();
++  void         clearResidualBuffer();
++  void         destroyResidualBuffer();
++  
+   CodingStructure*   cs;
+ #if GDR_ENABLED
+   GdrPicParam        gdrParam;
+diff --git a/source/Lib/DecoderLib/DecCu.cpp b/source/Lib/DecoderLib/DecCu.cpp
+index cc31eeb36..941585313 100644
+--- a/source/Lib/DecoderLib/DecCu.cpp
++++ b/source/Lib/DecoderLib/DecCu.cpp
+@@ -43,6 +43,7 @@
+ #include "CommonLib/UnitTools.h"
+ 
+ #include "CommonLib/dtrace_buffer.h"
++#include <fstream>
+ 
+ #if RExt__DECODER_DEBUG_TOOL_STATISTICS
+ #include "CommonLib/CodingStatistics.h"
+@@ -282,7 +283,34 @@ void DecCu::xIntraRecBlk( TransformUnit& tu, const ComponentID compID )
+   {
+     piResi.fill( 0 );
+   }
+-
++  // ★★★ 여기에 Residual 저장 추가 ★★★
++  // Inverse transform 완료, LMCS scaling 전, reconstruction 전
++  Picture* pic = cs.picture;
++  PelStorage* residualBuf = pic->getResidualBuffer();
++  
++  if(residualBuf)
++  {
++    // TU의 위치와 크기
++    const CompArea& tuArea = tu.blocks[compID];
++    
++    // Source: TU의 residual buffer (inverse transform 결과)
++    const Pel* pSrc = piResi.buf;
++    const int srcStride = piResi.stride;
++    
++    // Destination: Picture의 residual buffer
++    PelBuf dstBuf = residualBuf->getBuf(compID);
++    Pel* pDst = dstBuf.buf + tuArea.y * dstBuf.stride + tuArea.x;
++    const int dstStride = dstBuf.stride;
++    
++    // Copy residual to picture buffer
++    for(int y = 0; y < tuArea.height; y++)
++    {
++      memcpy(pDst + y * dstStride, 
++             pSrc + y * srcStride, 
++             sizeof(Pel) * tuArea.width);
++    }
++  }
++  // ★★★ Residual 저장 끝 ★★★
+   //===== reconstruction =====
+   flag = flag && (tu.blocks[compID].width*tu.blocks[compID].height > 4);
+   if (flag && (TU::getCbf(tu, compID) || tu.jointCbCr) && isChroma(compID) && slice.getPicHeader()->getLmcsChromaResidualScaleFlag())
+@@ -753,6 +781,27 @@ void DecCu::xDecodeInterTU( TransformUnit & currTU, const ComponentID compID )
+     resiBuf.fill( 0 );
+   }
+ 
++  
++  // ★★★ 여기에 Residual 저장 추가 ★★★
++  Picture* pic = cs.picture;
++  PelStorage* residualBuf = pic->getResidualBuffer();
++  
++  if(residualBuf)
++  {
++    const CompArea& tuArea = currTU.blocks[compID];
++    if(tuArea.valid())
++    {
++      PelBuf dstBuf = residualBuf->getBuf(compID);
++      Pel* pDst     = dstBuf.buf + tuArea.y * dstBuf.stride + tuArea.x;
++      const Pel* pSrc    = resiBuf.buf;      // 함수 상단에서 이미 선언된 resiBuf
++      const int srcStride = resiBuf.stride;
++      const int dstStride = dstBuf.stride;
++
++      for(int y = 0; y < (int)tuArea.height; y++)
++        memcpy(pDst + y * dstStride, pSrc + y * srcStride, sizeof(Pel) * tuArea.width);
++    }
++  }
++  // ★★★ Inter Residual 저장 끝 ★★★
+   //===== reconstruction =====
+   const Slice           &slice = *cs.slice;
+   if (!currTU.cu->colorTransform && slice.getLmcsEnabledFlag() && isChroma(compID) && (TU::getCbf(currTU, compID) || currTU.jointCbCr)
+diff --git a/source/Lib/DecoderLib/DecLib.cpp b/source/Lib/DecoderLib/DecLib.cpp
+index a597c7834..1e7c42482 100644
+--- a/source/Lib/DecoderLib/DecLib.cpp
++++ b/source/Lib/DecoderLib/DecLib.cpp
+@@ -820,7 +820,9 @@ void DecLib::executeLoopFilters()
+   cs.m_featureCounter =  initValues;
+ #endif
+   // deblocking filter
++  m_deblockingFilter.saveYUVForDebug(cs, "before");
+   m_deblockingFilter.deblockingFilterPic( cs );
++  m_deblockingFilter.saveYUVForDebug(cs, "after");
+   CS::setRefinedMotionField(cs);
+   if( cs.sps->getSAOEnabledFlag() )
+   {
+diff --git a/source/Lib/DecoderLib/DecLib.h b/source/Lib/DecoderLib/DecLib.h
+index 9efda95c2..aee9a5a6d 100644
+--- a/source/Lib/DecoderLib/DecLib.h
++++ b/source/Lib/DecoderLib/DecLib.h
+@@ -276,6 +276,7 @@ public:
+   void  destroy ();
+ 
+   void  setDecodedPictureHashSEIEnabled(int enabled) { m_decodedPictureHashSEIEnabled=enabled; }
++  void setDeblockDir(const std::string& dir) { m_deblockingFilter.setDeblockDir(dir); }
+ 
+   void  init(
+ #if JVET_J0090_MEMORY_BANDWITH_MEASURE
+diff --git a/source/Lib/DecoderLib/DecSlice.cpp b/source/Lib/DecoderLib/DecSlice.cpp
+index 230f06a69..88671efd3 100644
+--- a/source/Lib/DecoderLib/DecSlice.cpp
++++ b/source/Lib/DecoderLib/DecSlice.cpp
+@@ -96,11 +96,33 @@ void DecSlice::decompressSlice( Slice* slice, InputBitstream* bitstream, int deb
+ 
+   cs.resetPrevPLT(cs.prevPLT);
+ 
++  // if (slice->getFirstCtuRsAddrInSlice() == 0)
++  // {
++  //   cs.picture->resizeAlfData(cs.pcv->sizeInCtus);
++
++  //   // ★★★ 여기에 Residual buffer 초기화 추가 ★★★
++  //   if(!pic->getResidualBuffer())
++  //   {
++  //     pic->createResidualBuffer();
++  //   }
++  //   pic->clearResidualBuffer();
++  //   // ★★★ Residual buffer 초기화 끝 ★★★
++  // }
+   if (slice->getFirstCtuRsAddrInSlice() == 0)
+   {
+     cs.picture->resizeAlfData(cs.pcv->sizeInCtus);
+   }
+ 
++  // residual buffer는 항상 초기화
++  if(!pic->getResidualBuffer())
++  {
++    pic->createResidualBuffer();
++  }
++  if (slice->getFirstCtuRsAddrInSlice() == 0)
++  {
++    pic->clearResidualBuffer();  // 새 픽처 시작할 때만 clear
++  }
++
+   const unsigned numSubstreams = slice->getNumberOfSubstreamSizes() + 1;
+ 
+   // init each couple {EntropyDecoder, Substream}
