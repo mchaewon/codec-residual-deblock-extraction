@@ -124,10 +124,11 @@ python VTM.py --input-root /path/to/data --cfg cfg/encoder_randomaccess_vtm.cfg
 | `tools/resi_visual.py` | `vtm_data/` | 모든 residual 의 Y 를 npy/png | `./residual_ra/` → `Y_npy`, `Y_png` |
 | `tools/qp_extract.py` | `vtm_data/` | VTM 인코더 로그에서 POC 별 slice type/QP json (키 = POC+1) | `./fern_ra_log.txt` → `./fern_ra_qp.json` |
 | `tools/deblock_diff.py` | VTM 루트 | POC 1개의 diff map 6패널 + 통계, `bit_depth` 인자 있음 | `./deblock_output/{before,after}/deblock_0001.yuv` (1008x760, 8bit) → `./deblock_output/diff_map_poc1.png` |
-| `tools/visual.py` | VTM 루트 | residual 1개를 npy/png + 통계 | `./residual_output/residual_0002.yuv` (1008x**760** 으로 읽음) |
+| `tools/visual.py` | VTM 루트 | residual 1개를 npy/png + 통계 | `--input` (기본 `./residual_output/residual_0002.yuv`), `--width 1008 --height 756` → `--output-prefix` `.npy/.png` |
 
 - `tools/deblock_diff.py` 의 `load_yuv` 기본값은 `bit_depth=10` 이지만 `__main__` 에서 8 을 넘긴다. 현재 디코더는 8-bit 로 저장하므로 다른 곳에서 함수만 가져다 쓸 때는 `bit_depth=8` 을 줘야 한다.
-- `tools/visual.py` 의 기본 `HEIGHT = 760` 은 현재 residual 파일(756행, 크롭됨)보다 커서 그대로 실행하면 크기 불일치 에러가 난다. `HEIGHT = 756` 으로 바꿔 써야 한다(크롭 추가 전 출력용 설정으로 보임, 수정하지 않음).
+- `tools/visual.py`: 원래 `HEIGHT = 760` 이 하드코딩돼 있어 현재 residual 파일(756행, 크롭됨)에서 크기 불일치 에러가 났다. `--input --width --height --frame-index --output-prefix` 인자를 받게 바꾸고 기본 크기를 실제 residual 크기(1008x756)로 맞췄다. 그 외 코드는 그대로다.
+  예) `python tools/visual.py --input vtm_data/residual_ai/residual_0001.yuv --output-prefix /tmp/res_0001` (VTM 폴더에서. 로컬 결과로 실행 확인함)
 - `tools/visual.py` 의 `read_residual_y_only` 는 프레임 크기를 Y+Cb+Cr 로 계산한다. residual 파일에는 Y 만 있으므로 `frame_index` 가 0 이 아니면 위치가 틀린다(기본 0 이라 그대로는 문제 없음).
 - `analysis/01_deblock_diff.py`, `analysis/03_residual_visual.py` 와 기능이 겹친다(합치지 않음).
 

@@ -81,13 +81,22 @@ def save_residual_visualizations(Y, output_prefix):
 # ===============================
 
 if __name__ == "__main__":
-    # 설정
-    RESIDUAL_FILE = "./residual_output/residual_0002.yuv"
-    WIDTH = 1008
-    HEIGHT = 760
-    FRAME_INDEX = 0  # 첫 번째 프레임
-    OUTPUT_PREFIX = "./residual_output/Y_residual_0002"  # 출력 파일 이름 (확장자 제외)
-    
+    import argparse
+
+    # 설정 (기본값: VTM residual 실제 크기 = conformance window 로 크롭된 1008x756)
+    parser = argparse.ArgumentParser(description="VTM residual_XXXX.yuv (Y, int16) -> npy/png + 통계")
+    parser.add_argument("--input", default="./residual_output/residual_0002.yuv", help="residual yuv 경로")
+    parser.add_argument("--width", type=int, default=1008, help="residual 너비 (크롭된 크기)")
+    parser.add_argument("--height", type=int, default=756, help="residual 높이 (크롭된 크기)")
+    parser.add_argument("--frame-index", type=int, default=0, help="첫 번째 프레임 = 0")
+    parser.add_argument("--output-prefix", default="./residual_output/Y_residual_0002", help="출력 파일 이름 (확장자 제외)")
+    args = parser.parse_args()
+    RESIDUAL_FILE = args.input
+    WIDTH = args.width
+    HEIGHT = args.height
+    FRAME_INDEX = args.frame_index
+    OUTPUT_PREFIX = args.output_prefix
+
     # Y 성분 읽기
     print(f"Reading Y component from: {RESIDUAL_FILE}")
     Y = read_residual_y_only(RESIDUAL_FILE, WIDTH, HEIGHT, FRAME_INDEX)
