@@ -44,38 +44,6 @@ pip install -r analysis/requirements.txt     # numpy, matplotlib, opencv-python,
 
 `<tag>` = `<CODEC>_<scene>_QP<qp>_poc<XXXX>`. `--root` 를 주지 않으면 `HM/Compressed/LLFF` 를 찾는데, 데이터는 레포에 없으므로 먼저 `HM/HM.py` 로 만들어야 한다.
 
-### 원본 파일과 대응 / 남긴 버전
-
-각 원본 파일에는 예전 버전이 통째로 주석으로 남아 있었다. **활성(주석 아닌) 최신 버전만** 옮겼고 죽은 주석 코드는 지웠다(원본은 `HM/analysis/` 에 그대로 있다. 레포에는 올리지 않음).
-
-| 새 파일 | 원본 | 살린 것 | 지운 주석 코드 |
-|---|---|---|---|
-| `01_deblock_diff.py` | `deblock_diff.py` | 1–106행 (6패널 `visualize_diff`) | 107–292행: 여러 scene/QP 를 도는 이전 버전 |
-| `02_deblock_grad_lap.py` | `deblock_grad.py` | 거의 전부 (설명 주석만 있었음) | 없음 |
-| `03_residual_visual.py` | `visual.py` + `resi_dist.py` | `visual.py` 1–99행, `resi_dist.py` 의 `visualize_residual_variants` 계열(467–559행) | `visual.py` 100–309행, `resi_dist.py` 1–268행(`_save_histograms`, `analyze_*` 이전 버전) |
-| `04_residual_qp_dist.py` | `resi_dist.py` | `compare_qp_distributions_*`, `plot_qp_overlaid_hists` (269–449행). 주석으로만 남아 있던 호출 예(leaves)는 CLI 인자로 대체 | 위와 같음 |
-| `05_residual_deblock_intersection.py` | `visual_diff_resi_deblock.py` | v2 (225–495행, log1p/abs quantile 정규화) | 1–224행: v1 (`normalize_map` percentile 하나로 정규화) |
-| `06_hf_frequency.py` | `fft_heat.py` | 1676–2073행 (4가지 HF 방법 비교) | 1–922행: 주파수 band 에너지 시각화, pure texture FFT 강화 버전 / 923–1213행: FFT HF 만 / 1215–1675행: `HF_METHOD` 하나만 고르는 버전 |
-| `07_residual_dog_sweep.py` | `DoG_normal.py` | 279–502행 (DoG 파라미터 sweep) | 1–278행: HV edge 억제, FFT notch, morphology 를 쓰는 HF map 버전 |
-| `common/io_utils.py` | 위 파일들에 중복돼 있던 함수 | `read_y_channel`, `read_residual_y`, `normalize_dblk`, `normalize_residual_abs`, `normalize_map`, `robust_scale_abs` + 크롭/경로 처리 | — |
-
-### 정리하면서 고친 것
-
-| # | 원본 | 문제 | 수정 |
-|---|---|---|---|
-| 1 | `deblock_diff.py` | 8-bit 데이터인데 PSNR peak = 1023, 패널 5 `imshow(vmax=1023)` | `--bit-depth` 로 peak = 2^b−1. fern QP32 POC1 PSNR 이 62.40 dB(peak 1023) → **50.34 dB**(peak 255, 760행 기준)로 바뀜 |
-| 2 | `deblock_diff.py` 등 | 기본 HEIGHT 가 760(coded)과 756(크롭)으로 섞여 있음 | deblock 은 coded 크기로 읽고 표시 크기로 크롭. coded 전체로 보려면 `01 --no-crop` |
-| 3 | `resi_dist.py`, `DoG_normal.py` | residual(Y 만 저장)을 읽을 때 프레임 크기를 Y+Cb+Cr 로 계산 → `frame_index>0` 이면 위치가 틀림 | Y plane 크기로 seek (`read_residual_y`) |
-| 4 | `deblock_grad.py` | 760행 파일을 756행 기준 프레임 크기로 seek → `frame_index>0` 이면 틀림 | coded 크기로 seek 후 크롭 |
-| 5 | `visual_diff_resi_deblock.py` | `codec="VVC"` 면 deblock 을 uint16 으로 읽음. 현재 VTM 디코더는 uint8 로 저장 | 비트수는 `--bit-depth` 로만 결정 (기본 8) |
-| 6 | `visual_diff_resi_deblock.py` | before/after 패널을 `vmax=1` 로 그려 0..255 영상이 흰색으로 포화 | `vmax = peak` |
-| 7 | `visual_diff_resi_deblock.py` | 그림 라벨의 한글이 기본 폰트(DejaVu)에 없어 깨짐 | 그림 라벨만 영어로 |
-| 8 | 전체 | 하드코딩된 경로·해상도·POC·scene·QP, `plt.show()` | argparse 인자, 상대경로 기본값, `analysis/outputs/` 저장, `--show` 일 때만 창 표시 |
-| 9 | 전체 | AVC(JM) residual 은 크롭 안 된 768행 | `--codec AVC` 면 크롭 |
-| 10 | `visual.py` | 디버그 `print('check')` | 제거 |
-
-그 밖의 계산(정규화 분위수, smoothing σ, threshold, HF 파라미터, DoG 점수)은 원본 그대로다. `06` 그림 왼쪽의 행 라벨 텍스트("Method 1" 등)는 빠졌다(각 패널 제목에 방법 이름이 있음).
-
 ### samples/
 
 | 파일 | 내용 |
